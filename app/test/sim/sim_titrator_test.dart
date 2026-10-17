@@ -517,6 +517,32 @@ void main() {
       expect(rig.doses, isEmpty, reason: 'no dose on the bad readings');
     });
 
+    test('its readings do not feed the titration', () {
+      // The electrode swings between two buffers, so the wait never settles
+      // and after SETTLE_MAX any reading decides: one at the rail must not.
+      final rig = Rig()..send(const StartTitration(7));
+      for (var i = 0; i < 29; i++) {
+        rig.sim.bufferPh = i.isEven ? 4 : 10;
+        rig.run(const Duration(seconds: 1));
+      }
+      rig.run(const Duration(milliseconds: 400)); // 29.4 s into the wait
+      expect(rig.doses, isEmpty);
+      rig.clear();
+
+      // Readings at 29.5, 30.0 and 30.5 s, the last two past SETTLE_MAX.
+      rig.sim.electrodeFault = true;
+      rig.run(const Duration(milliseconds: 1500));
+      expect(rig.rawOf('ph'), hasLength(3));
+      expect(rig.lastMv, closeTo(SimTitrator.faultMv, 3));
+      expect(rig.doses, isEmpty);
+      expect(rig.log, isEmpty);
+      expect(rig.sim.mode, DeviceMode.titrating);
+
+      rig.run(const Duration(seconds: 1)); // the fault trips at 31.4 s
+      expect(rig.log, ['error:sensor', 'idle']);
+      expect(rig.doses, isEmpty);
+    });
+
     test('does not stop a motion', () {
       final rig = Rig();
       rig.sim.electrodeFault = true;

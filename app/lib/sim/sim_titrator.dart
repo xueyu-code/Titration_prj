@@ -270,7 +270,9 @@ class SimTitrator {
       final mv = _round(electrodeMv + _noise(), 1);
       final ph = _round(_phOf(mv), 2);
       _emit({'evt': 'ph', 'v': ph, 'mv': mv});
-      if (_mode == DeviceMode.titrating) _control(ph);
+      // A reading at the rail is reported, but it is no measurement: the
+      // control loop does not see it.
+      if (_mode == DeviceMode.titrating && !electrodeFault) _control(ph);
     }
   }
 
