@@ -8,18 +8,12 @@ import '../../core/ph_sample.dart';
 import '../../l10n/app_localizations.dart';
 import '../format.dart';
 
-/// pH over time. [showDate] adds the date to time labels (multi-day ranges).
+/// pH over time.
 class PhChart extends StatelessWidget {
-  const PhChart({
-    super.key,
-    required this.samples,
-    this.target,
-    this.showDate = false,
-  });
+  const PhChart({super.key, required this.samples, this.target});
 
   final List<PhSample> samples;
   final double? target;
-  final bool showDate;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +38,7 @@ class PhChart extends StatelessWidget {
     final ySpan = maxY - minY;
     final yInterval = ySpan <= 2 ? 0.5 : (ySpan <= 6 ? 1.0 : 2.0);
 
-    final axisFormat = DateFormat(showDate ? 'MM-dd HH:mm' : 'HH:mm:ss');
+    final axisFormat = DateFormat('HH:mm:ss');
     final tooltipFormat = DateFormat('MM-dd HH:mm:ss');
     DateTime timeAt(double x) => start.add(Duration(milliseconds: x.round()));
     final phLabel = AppLocalizations.of(context).ph;

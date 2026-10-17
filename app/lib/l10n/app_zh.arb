@@ -11,7 +11,6 @@
   "ph": "pH",
   "language": "语言",
   "languageSystem": "跟随系统",
-  "history": "历史曲线",
   "rescan": "重新扫描",
   "disconnect": "断开连接",
   "commandFailed": "命令发送失败，请检查连接",
@@ -76,15 +75,5 @@
   "calOffset": "零点偏移：{value} mV",
   "calAgain": "重新标定",
   "calDiscardMessage": "放弃本次标定？",
-  "calDiscard": "放弃",
-
-  "historyTitle": "历史曲线",
-  "refresh": "刷新",
-  "rangeHours": "{count} 小时",
-  "rangeDays": "{count} 天",
-  "rangeStart": "开始时间",
-  "rangeEnd": "结束时间",
-  "rangeInvalid": "开始时间必须早于结束时间",
-  "noDataInRange": "该时间范围内没有数据",
-  "loadFailed": "数据加载失败"
+  "calDiscard": "放弃"
 }

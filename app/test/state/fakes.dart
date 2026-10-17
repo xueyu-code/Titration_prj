@@ -1,10 +1,8 @@
 import 'dart:async';
 
-import 'package:titrator_app/core/ph_sample.dart';
 import 'package:titrator_app/core/protocol.dart';
 import 'package:titrator_app/data/app_notifier.dart';
 import 'package:titrator_app/data/device_link.dart';
-import 'package:titrator_app/data/sample_store.dart';
 
 /// Lets queued stream events and microtasks run.
 Future<void> settle() => Future<void>.delayed(Duration.zero);
@@ -49,31 +47,6 @@ class FakeDeviceLink implements DeviceLink {
     _status.close();
     _events.close();
   }
-}
-
-class FakeSampleStore implements SampleStore {
-  final added = <PhSample>[];
-  int flushes = 0;
-
-  @override
-  void add(PhSample sample) => added.add(sample);
-
-  @override
-  Future<void> addAll(Iterable<PhSample> samples) async =>
-      added.addAll(samples);
-
-  @override
-  Future<void> flush() async => flushes++;
-
-  @override
-  Future<List<PhSample>> query(
-    DateTime from,
-    DateTime to, {
-    int maxPoints = 1000,
-  }) async => added;
-
-  @override
-  Future<void> close() async {}
 }
 
 class FakeAppNotifier implements AppNotifier {

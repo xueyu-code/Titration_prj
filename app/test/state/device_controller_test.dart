@@ -12,7 +12,6 @@ import 'fakes.dart';
 
 void main() {
   late FakeDeviceLink link;
-  late FakeSampleStore store;
   late FakeAppNotifier notifier;
   late ProviderContainer container;
   late DateTime now;
@@ -44,13 +43,11 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({'locale': 'en'});
     link = FakeDeviceLink();
-    store = FakeSampleStore();
     notifier = FakeAppNotifier();
     now = t0;
     container = ProviderContainer(
       overrides: [
         deviceLinkProvider.overrideWithValue(link),
-        sampleStoreProvider.overrideWithValue(store),
         appNotifierProvider.overrideWithValue(notifier),
         clockProvider.overrideWithValue(() => now),
         prefsProvider.overrideWithValue(await SharedPreferences.getInstance()),
@@ -98,14 +95,13 @@ void main() {
       expect(state().target, isNull);
     });
 
-    test('disconnect forgets the device and flushes the store', () async {
+    test('disconnect forgets the device', () async {
       await controller().connect('AA:BB', 'Titrator-1');
       await reading(7.0, 1);
       await controller().disconnect();
       expect(state().deviceId, isNull);
       expect(state().link, LinkStatus.disconnected);
       expect(state().ph, isNull);
-      expect(store.flushes, greaterThan(0));
     });
 
     test('an unexpected drop keeps the device and its readings', () async {
@@ -122,7 +118,6 @@ void main() {
       expect(state().recent, hasLength(1));
       expect(state().mode, DeviceMode.unknown);
       expect(state().target, isNull);
-      expect(store.flushes, 1);
 
       // The titration is over: late readings must not complete anything.
       await controller().reconnect();
@@ -135,12 +130,12 @@ void main() {
   });
 
   group('readings', () {
-    test('are stored and exposed', () async {
+    test('are exposed', () async {
       await controller().connect('AA:BB', 'Titrator-1');
       await reading(6.98, 1);
       expect(state().ph, 6.98);
-      expect(store.added.single.ph, 6.98);
-      expect(store.added.single.time, t0.add(const Duration(seconds: 1)));
+      expect(state().recent.single.ph, 6.98);
+      expect(state().recent.single.time, t0.add(const Duration(seconds: 1)));
     });
 
     test('recent keeps only the live window', () async {
@@ -157,7 +152,6 @@ void main() {
         12.0,
         13.0,
       ]);
-      expect(store.added, hasLength(7), reason: 'all readings are persisted');
     });
   });
 

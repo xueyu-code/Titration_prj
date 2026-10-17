@@ -17,7 +17,6 @@
   "ph": "pH",
   "language": "Language",
   "languageSystem": "Follow system",
-  "history": "History",
   "rescan": "Rescan",
   "disconnect": "Disconnect",
   "commandFailed": "Command failed, check the connection",
@@ -123,25 +122,5 @@
   },
   "calAgain": "Calibrate again",
   "calDiscardMessage": "Discard this calibration?",
-  "calDiscard": "Discard",
-
-  "historyTitle": "History curve",
-  "refresh": "Refresh",
-  "rangeHours": "{count} h",
-  "@rangeHours": {
-    "placeholders": {
-      "count": {"type": "int"}
-    }
-  },
-  "rangeDays": "{count} d",
-  "@rangeDays": {
-    "placeholders": {
-      "count": {"type": "int"}
-    }
-  },
-  "rangeStart": "Start",
-  "rangeEnd": "End",
-  "rangeInvalid": "Start must be before end",
-  "noDataInRange": "No data in this range",
-  "loadFailed": "Failed to load data"
+  "calDiscard": "Discard"
 }

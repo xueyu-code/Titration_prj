@@ -28,7 +28,6 @@ void main() {
         overrides: <Override>[
           localeProvider.overrideWith(FakeLocale.new),
           appNotifierProvider.overrideWithValue(FakeAppNotifier()),
-          sampleStoreProvider.overrideWithValue(FakeSampleStore()),
           deviceLinkProvider.overrideWithValue(link),
           scanProvider.overrideWith(SimScanController.new),
         ],

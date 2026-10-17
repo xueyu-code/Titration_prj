@@ -7,7 +7,6 @@ import '../data/device_link.dart';
 import '../l10n/app_localizations.dart';
 import '../state/device_controller.dart';
 import '../state/scan_controller.dart';
-import 'history_page.dart';
 import 'home_page.dart';
 import 'widgets/language_button.dart';
 import 'widgets/snack.dart';
@@ -74,13 +73,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
       appBar: AppBar(
         title: Text(l10n.appTitle),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: l10n.history,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const HistoryPage()),
-            ),
-          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: l10n.rescan,

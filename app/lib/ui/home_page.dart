@@ -9,7 +9,6 @@ import '../state/device_controller.dart';
 import '../state/providers.dart';
 import 'calibration_page.dart';
 import 'format.dart';
-import 'history_page.dart';
 import 'widgets/confirm_dialog.dart';
 import 'widgets/jog_button.dart';
 import 'widgets/language_button.dart';
@@ -170,13 +169,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         appBar: AppBar(
           title: Text(state.deviceName ?? l10n.appTitle),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.history),
-              tooltip: l10n.history,
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const HistoryPage()),
-              ),
-            ),
             const LanguageButton(),
             IconButton(
               icon: const Icon(Icons.link_off),

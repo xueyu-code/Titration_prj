@@ -13,7 +13,6 @@ BLE as specified in [`docs/protocol.md`](../docs/protocol.md).
   continuous motion
 - Guided multi-point pH calibration (6.86 / 4.00 / 9.18 or 7.00 / 4.01 / 10.01,
   at least 2 points)
-- Every reading is stored locally; history view for any time range
 - Chinese / English UI, switchable in the app
 
 ## Layout
@@ -21,7 +20,7 @@ BLE as specified in [`docs/protocol.md`](../docs/protocol.md).
 ```
 lib/
   core/    pure Dart: protocol codec, completion detector, models
-  data/    platform adapters: BLE link, sqlite sample store, notifications
+  data/    platform adapters: BLE link, notifications
   state/   Riverpod controllers (scan, device session, calibration, locale)
   ui/      pages and widgets
   l10n/    ARB translations (Dart files are generated)
@@ -38,8 +37,12 @@ Toolchain: Flutter 3.47.7, Android SDK 37, JDK 17 (see `docs/DEV_GUIDE.md`).
 flutter pub get          # also generates lib/l10n/app_localizations*.dart
 flutter analyze
 flutter test
-flutter build apk --release
+flutter build apk --release   # install this one on the phone
 ```
+
+Install release builds, not debug ones: a debug APK is ~200 MB, the release
+APK ~20 MB. It contains arm64-v8a only (see `android/app/build.gradle.kts`).
+Use debug builds (`flutter run`) only for development with hot reload.
 
 `compileSdk` is 37 because `permission_handler_android` and
 `reactive_ble_mobile` require it.
@@ -48,11 +51,12 @@ flutter build apk --release
 
 `lib/main_sim.dart` runs the whole app against a simulated titrator, so
 everything can be tried on a phone without the board. `lib/main.dart` never
-imports `lib/sim/`, so release builds contain none of it.
+imports `lib/sim/`, so the real app contains none of it.
 
 ```bash
-flutter run -t lib/main_sim.dart
-flutter build apk --debug -t lib/main_sim.dart
+flutter build apk --release -t lib/main_sim.dart   # install on the phone
+flutter run --release -t lib/main_sim.dart         # or run it directly
+flutter run -t lib/main_sim.dart                   # development, hot reload
 ```
 
 - `SimTitrator` models the firmware and the beaker (buffered acid-base
@@ -65,6 +69,4 @@ flutter build apk --debug -t lib/main_sim.dart
   (true pH, syringe volumes, mode) and fault injection: drop the connection,
   limit error, electrode error, fail the next calibration point, new sample.
 - The build has the same application id as the real app, so it installs over
-  it. Its readings go to their own database (`samples_sim.db`, next to the real
-  `samples.db`), and an empty history is seeded with 24 hours of readings on
-  first start.
+  it.

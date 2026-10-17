@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/protocol.dart';
 import '../data/app_notifier.dart';
 import '../data/device_link.dart';
-import '../data/sample_store.dart';
 
 /// Overridden in main() with the instance loaded before runApp.
 final prefsProvider = Provider<SharedPreferences>(
@@ -26,12 +25,6 @@ final deviceLinkProvider = Provider<DeviceLink>((ref) {
   final link = DeviceLink(ref.watch(bleProvider));
   ref.onDispose(link.dispose);
   return link;
-});
-
-final sampleStoreProvider = Provider<SampleStore>((ref) {
-  final store = SampleStore();
-  ref.onDispose(store.close);
-  return store;
 });
 
 /// Raw device events, for UI side effects such as error snack bars.

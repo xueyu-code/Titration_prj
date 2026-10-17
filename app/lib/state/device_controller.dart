@@ -67,8 +67,8 @@ class DeviceState {
   );
 }
 
-/// The session with the connected titrator: connection, live readings,
-/// persistence and titration completion. Kept alive for the app's lifetime.
+/// The session with the connected titrator: connection, live readings and
+/// titration completion. Kept alive for the app's lifetime.
 final deviceProvider = NotifierProvider<DeviceController, DeviceState>(
   DeviceController.new,
 );
@@ -123,7 +123,6 @@ class DeviceController extends Notifier<DeviceState> {
     _detector = null;
     await _link.disconnect();
     state = const DeviceState();
-    await _flushStore();
   }
 
   Future<void> startTitration(double target) async {
@@ -156,7 +155,6 @@ class DeviceController extends Notifier<DeviceState> {
       mode: DeviceMode.unknown,
       target: () => null,
     );
-    unawaited(_flushStore());
   }
 
   void _onEvent(DeviceEvent event) {
@@ -180,7 +178,6 @@ class DeviceController extends Notifier<DeviceState> {
   void _onReading(double ph) {
     final now = ref.read(clockProvider)();
     final sample = PhSample(now, ph);
-    ref.read(sampleStoreProvider).add(sample);
     final cutoff = now.subtract(liveWindow);
     state = state.copyWith(
       ph: ph,
@@ -225,6 +222,4 @@ class DeviceController extends Notifier<DeviceState> {
     _detector = null;
     state = state.copyWith(target: () => null);
   }
-
-  Future<void> _flushStore() => ref.read(sampleStoreProvider).flush();
 }

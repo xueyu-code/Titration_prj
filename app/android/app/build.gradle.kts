@@ -39,6 +39,14 @@ android {
     }
 }
 
+// Release APKs carry arm64-v8a only: the fat default bundles three copies of the
+// engine and the app. Debug builds follow `flutter run`'s target device.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll("**/armeabi-v7a/**", "**/x86_64/**")
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
