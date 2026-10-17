@@ -1,0 +1,151 @@
+{
+  "@@locale": "en",
+  "appTitle": "Titrator",
+  "titrationDoneTitle": "Titration complete",
+  "titrationDoneBody": "Target pH {target} reached, current pH {ph}.",
+  "@titrationDoneBody": {
+    "placeholders": {
+      "target": {"type": "String"},
+      "ph": {"type": "String"}
+    }
+  },
+
+  "ok": "OK",
+  "cancel": "Cancel",
+  "done": "Done",
+  "noData": "No data",
+  "ph": "pH",
+  "language": "Language",
+  "languageSystem": "Follow system",
+  "history": "History",
+  "rescan": "Rescan",
+  "disconnect": "Disconnect",
+  "commandFailed": "Command failed, check the connection",
+
+  "bluetoothOff": "Bluetooth is off. Turn on Bluetooth to scan for devices.",
+  "bluetoothUnauthorized": "Bluetooth permission needed. Allow nearby devices access in the app settings.",
+  "openSettings": "Open settings",
+  "locationOff": "Location services are off. Enable location services to scan for devices.",
+  "bluetoothUnsupported": "Bluetooth LE is not supported on this device.",
+  "unknownDevice": "Unknown device",
+  "noDevices": "No devices found, tap refresh to scan again",
+  "rssiDbm": "{rssi} dBm",
+  "@rssiDbm": {
+    "placeholders": {
+      "rssi": {"type": "int"}
+    }
+  },
+  "connecting": "Connecting…",
+  "linkTimeout": "Connection timed out",
+  "linkNotTitrator": "This device is not a titrator",
+  "linkFailed": "Connection failed",
+
+  "connectionLost": "Connection lost",
+  "reconnect": "Reconnect",
+  "disconnectWhileTitrating": "Titration in progress. Stop and disconnect?",
+  "stopAndDisconnect": "Stop and disconnect",
+  "modeIdle": "Idle",
+  "modeTitrating": "Titrating",
+  "modeMoving": "Motor running",
+  "modeCalibrating": "Calibrating",
+  "modeUnknown": "Unknown",
+  "targetPhValue": "Target pH {target}",
+  "@targetPhValue": {
+    "placeholders": {
+      "target": {"type": "String"}
+    }
+  },
+  "liveCurveTitle": "Live curve (last 5 min)",
+  "targetPh": "Target pH",
+  "targetPhInvalid": "Enter a pH between 0 and 14",
+  "startTitration": "Start titration",
+  "stopTitration": "Stop titration",
+  "channelAcid": "Channel 1 (acid)",
+  "channelBase": "Channel 2 (base)",
+  "aspirate": "Aspirate",
+  "dispense": "Dispense",
+  "jogHint": "Tap for one step, hold for continuous motion",
+  "calibrate": "pH calibration",
+  "errorBusy": "Device is busy, stop the current operation first",
+  "errorLimit": "Syringe reached its travel limit",
+  "errorSensor": "pH electrode error",
+  "errorBadCmd": "Device rejected the command",
+  "errorGeneric": "Device error: {code} {message}",
+  "@errorGeneric": {
+    "placeholders": {
+      "code": {"type": "String"},
+      "message": {"type": "String"}
+    }
+  },
+
+  "calIntro": "Calibrate the electrode with standard buffer solutions. Choose a buffer set and follow the steps, starting with the neutral buffer.",
+  "calBufferSet": "Buffer set",
+  "calStart": "Start calibration",
+  "calStepTitle": "pH {buffer} buffer",
+  "@calStepTitle": {
+    "placeholders": {
+      "buffer": {"type": "String"}
+    }
+  },
+  "calInstructions": "1. Rinse the electrode with distilled water and blot dry.\n2. Put it into the pH {buffer} buffer.\n3. Wait until the reading is stable, then tap Sample.",
+  "@calInstructions": {
+    "placeholders": {
+      "buffer": {"type": "String"}
+    }
+  },
+  "calSample": "Sample",
+  "calSampling": "Sampling, keep the electrode still…",
+  "calPointRejected": "Reading not stable or out of range, try again",
+  "calTimeout": "Device did not respond, try again",
+  "calLink": "Connection problem",
+  "calAllRecorded": "All points recorded",
+  "calFinish": "Finish calibration",
+  "calMinPoints": "At least {count} points are required",
+  "@calMinPoints": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "calFinishing": "Computing calibration…",
+  "calSuccess": "Calibration successful",
+  "calFailed": "Calibration failed",
+  "calSlope": "Slope: {value} %",
+  "@calSlope": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "calOffset": "Offset: {value} mV",
+  "@calOffset": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "calAgain": "Calibrate again",
+  "calDiscardMessage": "Discard this calibration?",
+  "calDiscard": "Discard",
+
+  "historyTitle": "History curve",
+  "refresh": "Refresh",
+  "rangeHours": "{count} h",
+  "@rangeHours": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "rangeDays": "{count} d",
+  "@rangeDays": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "rangeStart": "Start",
+  "rangeEnd": "End",
+  "rangeInvalid": "Start must be before end",
+  "noDataInRange": "No data in this range",
+  "loadFailed": "Failed to load data",
+  "statMin": "Min",
+  "statMax": "Max",
+  "statAvg": "Average",
+  "statCount": "Points"
+}
