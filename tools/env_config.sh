@@ -145,10 +145,14 @@ case "${ID}" in
   *) die "不支持的发行版: ${ID}（支持 Ubuntu / CachyOS / Arch / Manjaro）" ;;
 esac
 
-if [[ "${ID}" == cachyos* ]] && grep -q 'cachyos-v4' /etc/pacman.conf 2>/dev/null \
+## ★ 修复：直接 grep /etc/pacman.conf 的 'cachyos-v4' 字符串会命中被注释掉的 disabled_v4 段
+#   （真机实测：CachyOS 默认 pacman.conf 里即使 v4 仓库禁用，注释行里也留着这串文字），
+#   导致 v4 根本没启用也误报。改用 pacman-conf --repo-list 只看实际生效的仓库。
+if [[ "${ID}" == cachyos* ]] \
+   && pacman-conf --repo-list 2>/dev/null | grep -Eq '(^|-)(v4|znver4)$' \
    && ! grep -qw avx512f /proc/cpuinfo 2>/dev/null; then
-  warn "pacman.conf 启用 cachyos-v4 但 CPU 无 AVX-512 → 二进制会崩溃"
-  warn "请注释 /etc/pacman.conf 中 cachyos-v4 相关行"
+  warn "检测到已启用 v4/znver4 仓库但 CPU 无 AVX-512 → 二进制会崩溃"
+  warn "请在 /etc/pacman.conf 中注释掉对应 v4/znver4 仓库的 [section] 段"
 fi
 
 LOGIN_SHELL="$(basename "${SHELL:-/bin/bash}")"
