@@ -14,7 +14,7 @@ Duration ms(int n) => Duration(milliseconds: n);
 
 void main() {
   group('SimDeviceLink', () {
-    test('connects, reports the state, streams readings', () {
+    test('connects, reports the state and calibration, streams readings', () {
       fakeAsync((async) {
         final sim = SimTitrator();
         final link = SimDeviceLink(sim);
@@ -28,7 +28,7 @@ void main() {
         expect(statuses, [LinkStatus.connecting]);
         async.elapse(ms(2));
         expect(statuses, [LinkStatus.connecting, LinkStatus.connected]);
-        expect(events.single, isA<ModeChanged>());
+        expect(events, [isA<ModeChanged>(), isA<CalApplied>()]);
 
         async.elapse(const Duration(seconds: 2));
         expect(events.whereType<PhReading>(), hasLength(4));

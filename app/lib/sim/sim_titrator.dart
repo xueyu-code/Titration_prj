@@ -26,20 +26,47 @@ class SimTitrator {
   static const jogTimeout = Duration(seconds: 1);
   static const capacityMl = 10.0;
 
-  /// Both syringes start partly filled, so aspirating and dispensing work at
-  /// once; a titration needs at most about 5.5 mL.
+  /// Both syringes start partly filled (but unhomed: the device does not
+  /// know where they are); a titration needs at most about 5.5 mL.
   static const initialMl = 8.0;
 
-  /// Wait after each titration dose for mixing and the electrode response.
-  static const mixDelay = Duration(seconds: 2);
+  // The titration control loop of protocol section 4. The names mirror the
+  // firmware constants (SETTLE_SKIP and so on).
 
-  /// The titration holds while the reading is this close to the target.
-  static const tolerance = 0.02;
+  /// SETTLE_SKIP: readings this soon after a dose are discarded.
+  static const settleSkip = Duration(seconds: 2);
 
-  /// Proportional dose: [doseMlPerPh] per pH unit of error, within the limits.
-  static const doseMlPerPh = 0.3;
+  /// SETTLE_N and SETTLE_SPAN: the reading is settled when the last
+  /// [settleN] readings (4 s) lie within [settleSpan] pH of each other.
+  static const settleN = 8;
+  static const settleSpan = 0.03;
+
+  /// SETTLE_MAX: after this long the loop goes on with whatever it reads.
+  static const settleMax = Duration(seconds: 30);
+
+  /// HOLD_TOL: no dose while the reading is this close to the target. Must
+  /// stay below the app's completion band of 0.05.
+  static const holdTol = 0.02;
+
+  /// FIRST_DOSE, MIN_DOSE, MAX_DOSE for a 50 mL sample and 0.1 M reagent. A
+  /// buffered sample moves by roughly 0.6-1.5 pH per mL: the first dose is a
+  /// small probe, the smallest is a few drops (a few 0.001 pH, well inside
+  /// [holdTol]) and the largest moves the pH by less than 1. An unbuffered
+  /// sample jumps by whole pH units even at the smallest dose.
+  static const firstDoseMl = 0.05;
   static const minDoseMl = 0.005;
   static const maxDoseMl = 0.5;
+
+  /// The titration gives up (`no_converge`) at this many reversals of
+  /// direction, or at a reversal right after a [minDoseMl] dose.
+  static const maxReversals = 3;
+
+  /// The electrode voltage with the fault set: the front end sits at the
+  /// ADC rail, far beyond the roughly +-420 mV a working electrode gives.
+  static const faultMv = 800.0;
+
+  /// The device calls it a `sensor` error after this long at the rail.
+  static const faultDelay = Duration(seconds: 2);
 
   /// The true response of the simulated electrode, which is not ideal: what
   /// calibration finds out. Slope in mV per pH unit, offset in mV at pH 7.
@@ -75,8 +102,17 @@ class SimTitrator {
   /// The buffer (its pH) the electrode is dipped in; null: in the sample.
   double? bufferPh;
 
+  /// Fault hook: the electrode or its front end is broken. The voltage sits
+  /// at the ADC rail; after [faultDelay] the device reports `sensor`.
+  bool electrodeFault = false;
+
   final Random _random;
   final _syringeMl = [initialMl, initialMl];
+
+  /// Whether each syringe has reached its empty-end limit switch since
+  /// power-up. Until then the device does not know where it is (section 3).
+  final _homed = [false, false];
+
   late _Beaker _beaker;
   var _mode = DeviceMode.idle;
   var _now = Duration.zero;
@@ -96,39 +132,52 @@ class SimTitrator {
   ({Channel channel, Direction direction})? _motion;
   var _motionEnd = Duration.zero;
 
-  // Titrating: the target and the earliest time of the next dose.
+  // Titrating (protocol section 4): the target; the start of the current wait
+  // (a dose or hold decision) with the settled-reading window since; the last
+  // dose with the reading before it; the reversals so far.
   var _target = 7.0;
-  var _nextDose = Duration.zero;
+  var _waitFrom = Duration.zero;
+  final _window = <double>[];
+  ({Channel channel, double ml, double ph})? _lastDose;
+  var _reversals = 0;
+
+  // Time at the ADC rail.
+  var _faultTime = Duration.zero;
 
   DeviceMode get mode => _mode;
 
   /// True pH of the sample (the probe reading follows it with a lag).
   double get samplePh => _beaker.ph;
 
+  /// Whether the sample is a buffered one (smooth curve) or a plain
+  /// strong-acid/base one (a cliff at the equivalence point).
+  bool get buffered => _beaker.buffered;
+
   /// Electrode voltage in mV, without noise.
-  double get electrodeMv => electrodeOffset + electrodeSlope * (_probe - 7);
+  double get electrodeMv => electrodeFault
+      ? faultMv
+      : electrodeOffset + electrodeSlope * (_probe - 7);
+
+  /// The device is in the `sensor` fault: the electrode has been broken long
+  /// enough.
+  bool get sensorFault => _faultTime >= faultDelay;
 
   double syringeMl(Channel channel) => _syringeMl[channel.index];
 
-  /// A fresh sample at a random pH; the syringes keep their contents.
-  void newSample() => _beaker = _Beaker(5.5 + _random.nextDouble() * 3.5);
+  bool isHomed(Channel channel) => _homed[channel.index];
 
-  /// The app subscribed to EVT: report the state.
-  void connected() => _emitState();
+  /// A fresh sample at a random pH; the syringes keep their contents.
+  void newSample({bool buffered = true}) =>
+      _beaker = _Beaker(5.5 + _random.nextDouble() * 3.5, buffered: buffered);
+
+  /// The app subscribed to EVT: report the state and the stored calibration.
+  void connected() {
+    _emitState();
+    _emitCal();
+  }
 
   /// The link is gone: all motors stop.
   void disconnected() => _idle();
-
-  /// Fault hook: `limit` also stops motion and titration; `sensor` only
-  /// reports.
-  void injectError(String code) {
-    final running = _mode == DeviceMode.titrating || _mode == DeviceMode.moving;
-    if (code == 'limit' && running) {
-      _fail(code);
-    } else {
-      _error(code);
-    }
-  }
 
   /// Handles one CMD write: malformed or unknown is `bad_cmd`, a command the
   /// current mode does not accept is `busy`, otherwise it takes effect.
@@ -164,8 +213,12 @@ class SimTitrator {
   void _run(String cmd, Map<String, Object?> args) {
     switch (cmd) {
       case 'titrate':
-        _target = _ph(args['target']);
-        _nextDose = _now;
+        final target = _ph(args['target']);
+        if (sensorFault) return _error('sensor');
+        _target = target;
+        _lastDose = null;
+        _reversals = 0;
+        _startWait(); // the electrode may still be settling
         _setMode(DeviceMode.titrating);
       case 'stop':
         _idle();
@@ -178,16 +231,18 @@ class SimTitrator {
         final offset = _number(args['offset'], -100, 100);
         _calSlope = slope;
         _calOffset = offset;
-        _emit({'evt': 'cal', 'slope': slope, 'offset': offset});
+        _emitCal();
     }
   }
 
   /// Starts or extends a motion of one syringe.
   void _drive(Channel channel, Direction direction, {required bool jog}) {
     final i = channel.index;
-    final atLimit = direction == Direction.dispense
-        ? _syringeMl[i] <= 0
-        : _syringeMl[i] >= capacityMl;
+    final aspirate = direction == Direction.aspirate;
+    if (aspirate && !_homed[i]) {
+      return _fail('unhomed', channel: channel, direction: direction);
+    }
+    final atLimit = aspirate ? _syringeMl[i] >= capacityMl : _syringeMl[i] <= 0;
     if (atLimit) return _fail('limit', channel: channel, direction: direction);
 
     final motion = (channel: channel, direction: direction);
@@ -205,7 +260,7 @@ class SimTitrator {
     final from = _now;
     _now += dt;
     _runMotion(from);
-    _runTitration();
+    _watchElectrode(dt);
 
     final seconds = dt.inMicroseconds / 1e6;
     final source = bufferPh ?? _beaker.ph;
@@ -213,7 +268,9 @@ class SimTitrator {
     if (_now >= _nextReport) {
       _nextReport += reportInterval;
       final mv = _round(electrodeMv + _noise(), 1);
-      _emit({'evt': 'ph', 'v': _round(_phOf(mv), 2), 'mv': mv});
+      final ph = _round(_phOf(mv), 2);
+      _emit({'evt': 'ph', 'v': ph, 'mv': mv});
+      if (_mode == DeviceMode.titrating) _control(ph);
     }
   }
 
@@ -223,41 +280,106 @@ class SimTitrator {
     final until = _now < _motionEnd ? _now : _motionEnd;
     final ml = (until - from).inMicroseconds / 1e6 * pumpMlPerSecond;
 
-    final i = motion.channel.index;
-    final dispense = motion.direction == Direction.dispense;
-    final moved = min(
-      ml,
-      dispense ? _syringeMl[i] : capacityMl - _syringeMl[i],
-    );
-    if (dispense) {
-      _syringeMl[i] -= moved;
-      _beaker.dose(moved, _reagentMolar[i]);
+    if (motion.direction == Direction.dispense) {
+      if (_dispense(motion.channel, ml)) return;
     } else {
+      final i = motion.channel.index;
+      final moved = min(ml, capacityMl - _syringeMl[i]);
       _syringeMl[i] += moved;
+      if (moved < ml) {
+        return _fail(
+          'limit',
+          channel: motion.channel,
+          direction: motion.direction,
+        );
+      }
     }
+    if (_now >= _motionEnd) _idle();
+  }
 
-    if (moved < ml) {
-      _fail('limit', channel: motion.channel, direction: motion.direction);
-    } else if (_now >= _motionEnd) {
-      _idle();
+  /// Pushes [ml] from a syringe into the beaker. Reaching the empty end is the
+  /// limit switch: the syringe is homed and `limit` ends the motion or
+  /// titration. Returns whether that happened.
+  bool _dispense(Channel channel, double ml) {
+    final i = channel.index;
+    final moved = min(ml, _syringeMl[i]);
+    _syringeMl[i] -= moved;
+    _beaker.dose(moved, _reagentMolar[i]);
+    if (_syringeMl[i] > 0) return false;
+
+    _homed[i] = true;
+    _fail('limit', channel: channel, direction: Direction.dispense);
+    return true;
+  }
+
+  /// Counts the time at the ADC rail. The `sensor` error comes once, on
+  /// entering the fault; it ends a titration but not a motion.
+  void _watchElectrode(Duration dt) {
+    if (!electrodeFault) {
+      _faultTime = Duration.zero;
+      return;
+    }
+    if (sensorFault) return;
+    _faultTime += dt;
+    if (!sensorFault) return;
+    if (_mode == DeviceMode.titrating) {
+      _fail('sensor');
+    } else {
+      _error('sensor');
     }
   }
 
-  /// One control step: dose towards the target, then wait for mixing. Like
-  /// the firmware it acts on its own calibrated reading, not on the true pH.
-  void _runTitration() {
-    if (_mode != DeviceMode.titrating || _now < _nextDose) return;
-    final err = _target - _phOf(electrodeMv);
-    if (err.abs() <= tolerance) return;
+  // ---------------------------------------------------------- titration
+
+  /// Restarts the wait for a settled reading.
+  void _startWait() {
+    _waitFrom = _now;
+    _window.clear();
+  }
+
+  /// One step of the control loop (protocol section 4), on each reported
+  /// reading [ph]: wait for the reading to settle, then hold or dose. Like
+  /// the firmware it acts on its own noisy, calibrated reading, not on the
+  /// true pH.
+  void _control(double ph) {
+    final waited = _now - _waitFrom;
+    if (waited < settleSkip) return;
+    _window.add(ph);
+    if (_window.length > settleN) _window.removeAt(0);
+
+    final span = _window.reduce(max) - _window.reduce(min);
+    final settled = _window.length == settleN && span <= settleSpan;
+    if (settled || waited >= settleMax) {
+      _decide(_window.reduce((a, b) => a + b) / _window.length);
+    }
+  }
+
+  /// Holds or doses at the settled reading [ph]. The dose is half the volume
+  /// the last dose's response says is needed, halved again after a reversal;
+  /// without a usable response it is twice the last dose.
+  void _decide(double ph) {
+    _startWait();
+    final err = _target - ph;
+    if (err.abs() <= holdTol) return;
 
     final channel = err > 0 ? Channel.ch2 : Channel.ch1; // base : acid
-    final ml = (doseMlPerPh * err.abs()).clamp(minDoseMl, maxDoseMl);
-    if (_syringeMl[channel.index] < ml) {
-      return _fail('limit', channel: channel, direction: Direction.dispense);
+    var ml = firstDoseMl;
+    final last = _lastDose;
+    if (last != null) {
+      // Gain: how far the last dose moved the pH in the direction it pushes.
+      final gain = (last.channel == Channel.ch2 ? 1 : -1) * (ph - last.ph);
+      ml = gain >= settleSpan ? 0.5 * err.abs() * last.ml / gain : 2 * last.ml;
+      if (last.channel != channel) {
+        if (++_reversals >= maxReversals || last.ml <= minDoseMl) {
+          return _fail('no_converge');
+        }
+        ml /= 2;
+      }
     }
-    _syringeMl[channel.index] -= ml;
-    _beaker.dose(ml, _reagentMolar[channel.index]);
-    _nextDose = _now + mixDelay;
+    ml = ml.clamp(minDoseMl, maxDoseMl);
+
+    _lastDose = (channel: channel, ml: ml, ph: ph);
+    _dispense(channel, ml);
   }
 
   /// The device's pH for electrode voltage [mv]: protocol section 2.4.
@@ -290,6 +412,9 @@ class SimTitrator {
   }
 
   void _emitState() => _emit({'evt': 'state', 's': _mode.name});
+
+  void _emitCal() =>
+      _emit({'evt': 'cal', 'slope': _calSlope, 'offset': _calOffset});
 
   void _error(String code, {Channel? channel, Direction? direction}) => _emit({
     'evt': 'error',
@@ -324,12 +449,13 @@ double _round(double v, int decimals) {
 
 // ------------------------------------------------------------------ beaker
 
-/// The sample: strong acid/base reagents added to three weak-acid buffers.
-/// Its pH follows from the charge balance, so the titration curve is smooth
-/// and buffered like a real one.
+/// The sample: strong acid/base reagents added to three weak-acid buffers, or
+/// to plain water when not [buffered]. Its pH follows from the charge
+/// balance, so a buffered titration curve is smooth like a real one, while an
+/// unbuffered one has a cliff at the equivalence point.
 class _Beaker {
   /// A sample at [ph]: the net strong base is whatever balances the charges.
-  _Beaker(this.ph) {
+  _Beaker(this.ph, {required this.buffered}) {
     final h = _pow10(-ph);
     base = volume * (_kw / h - h) + _dissociated(h);
   }
@@ -339,6 +465,8 @@ class _Beaker {
 
   /// Moles of each weak acid: 5 mM in the initial 50 mL.
   static const _acidMol = 0.005 * 0.050;
+
+  final bool buffered;
 
   /// Litres.
   double volume = 0.050;
@@ -356,7 +484,8 @@ class _Beaker {
   }
 
   /// Moles of weak-acid anions at hydrogen ion concentration [h].
-  static double _dissociated(double h) {
+  double _dissociated(double h) {
+    if (!buffered) return 0;
     var mol = 0.0;
     for (final pKa in _pKa) {
       final ka = _pow10(-pKa);

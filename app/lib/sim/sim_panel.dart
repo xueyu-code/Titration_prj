@@ -101,7 +101,9 @@ class _SimPanelState extends State<SimPanel> {
 
   Widget _card(BuildContext context) {
     final textStyle = Theme.of(context).textTheme.bodySmall;
-    String ml(Channel c) => _sim.syringeMl(c).toStringAsFixed(2);
+    String syringe(Channel c) =>
+        '针筒${c.id} ${_sim.syringeMl(c).toStringAsFixed(2)} mL'
+        '${_sim.isHomed(c) ? '' : '（未归位）'}';
 
     return Material(
       elevation: 6,
@@ -116,9 +118,11 @@ class _SimPanelState extends State<SimPanel> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
+                '${_sim.buffered ? '有缓冲' : '无缓冲'}样品 '
                 'pH ${_sim.samplePh.toStringAsFixed(2)}  '
                 '${_sim.mode.name}\n'
-                '针筒1 ${ml(Channel.ch1)} mL  针筒2 ${ml(Channel.ch2)} mL\n'
+                '${syringe(Channel.ch1)}\n'
+                '${syringe(Channel.ch2)}\n'
                 '电极 ${_sim.electrodeMv.toStringAsFixed(1)} mV',
                 style: textStyle,
               ),
@@ -143,17 +147,19 @@ class _SimPanelState extends State<SimPanel> {
                     label: const Text('掉线'),
                     onPressed: widget.link.dropLink,
                   ),
-                  ActionChip(
-                    label: const Text('限位错误'),
-                    onPressed: () => _sim.injectError('limit'),
+                  FilterChip(
+                    label: const Text('电极异常'),
+                    selected: _sim.electrodeFault,
+                    onSelected: (on) =>
+                        setState(() => _sim.electrodeFault = on),
                   ),
                   ActionChip(
-                    label: const Text('电极错误'),
-                    onPressed: () => _sim.injectError('sensor'),
-                  ),
-                  ActionChip(
-                    label: const Text('换新样品'),
+                    label: const Text('新样品（有缓冲）'),
                     onPressed: _sim.newSample,
+                  ),
+                  ActionChip(
+                    label: const Text('新样品（无缓冲）'),
+                    onPressed: () => _sim.newSample(buffered: false),
                   ),
                 ],
               ),

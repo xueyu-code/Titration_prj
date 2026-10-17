@@ -83,6 +83,31 @@ void main() {
     await shutDown(tester);
   });
 
+  testWidgets('the panel toggles the electrode fault and renews the sample', (
+    tester,
+  ) async {
+    await pumpConnected(tester);
+    await tester.tap(find.text('SIM'));
+    await tester.pump();
+    expect(find.textContaining('有缓冲样品'), findsOneWidget);
+    expect(sim.buffered, isTrue);
+
+    await tester.tap(find.widgetWithText(FilterChip, '电极异常'));
+    expect(sim.electrodeFault, isTrue);
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilterChip, '电极异常'));
+    expect(sim.electrodeFault, isFalse);
+
+    await tester.tap(find.widgetWithText(ActionChip, '新样品（无缓冲）'));
+    await tester.pump();
+    expect(sim.buffered, isFalse);
+    expect(find.textContaining('无缓冲样品'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ActionChip, '新样品（有缓冲）'));
+    expect(sim.buffered, isTrue);
+
+    await shutDown(tester);
+  });
+
   testWidgets('the panel moves the electrode and shows its voltage', (
     tester,
   ) async {

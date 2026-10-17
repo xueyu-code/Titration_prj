@@ -65,17 +65,27 @@ flutter run --release -t lib/main_sim.dart         # or run it directly
 flutter run -t lib/main_sim.dart                   # development, hot reload
 ```
 
-- `SimTitrator` models the firmware and the beaker (buffered acid-base
-  chemistry, probe lag, 10 mL syringes with 0.1 M acid / base, starting at
-  8 mL) and speaks the wire protocol of `docs/protocol.md`, including the busy
-  rules, the jog timeout, the stored calibration and the error codes. Its
-  electrode is not ideal (slope -57.4 mV/pH, offset +6.5 mV) and noisy, so the
-  readings are slightly off until the app calibrates it. It is plain Dart
+- `SimTitrator` models the firmware and the beaker (acid-base chemistry, probe
+  lag, 10 mL syringes with 0.1 M acid / base, starting at 8 mL) and speaks the
+  wire protocol of `docs/protocol.md`, including the busy rules, the jog
+  timeout, the stored calibration (sent after subscribing) and the error codes.
+  Its electrode is not ideal (slope -57.4 mV/pH, offset +6.5 mV) and noisy, so
+  the readings are slightly off until the app calibrates it. It is plain Dart
   driven by `tick()`, so the tests run it in simulated time.
+- The syringes are unhomed at start: aspirating is refused (`unhomed`) until
+  the syringe has been emptied once, which triggers its limit switch (`limit`,
+  `out`). A titration that uses up its reagent does the same.
+- A titration follows the control loop of protocol section 4 on the device's
+  own noisy, calibrated readings: it waits for a settled reading, then holds
+  or doses, sized from the response of the previous dose. A sample with no
+  buffer capacity has a cliff at neutral, where it stops with `no_converge`.
+- The electrode fault (a panel toggle) puts the electrode voltage at the ADC
+  rail; after 2 s the device reports `sensor`, ending a titration.
 - Scanning finds one device, `Titrator-SIM`.
 - The floating **SIM** chip (bottom left) opens a panel with a live readout
-  (true pH, syringe volumes, electrode mV, mode), the electrode position (in
-  the sample or in one of the standard buffers, to calibrate with) and fault
-  injection: drop the connection, limit error, electrode error, new sample.
+  (true pH and kind of sample, syringe volumes, electrode mV, mode), the
+  electrode position (in the sample or in one of the standard buffers, to
+  calibrate with), and the controls: drop the connection, electrode fault, new
+  buffered / unbuffered sample.
 - The build has the same application id as the real app, so it installs over
   it.
