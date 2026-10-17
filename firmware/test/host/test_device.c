@@ -808,6 +808,14 @@ static void test_motion_end(void)
     expect_state(1, DEV_IDLE);
     expect_call_count(0); /* it has stopped by itself: nothing to halt */
 
+    /* A status that cannot come from a finished motion is taken as done (and logged). */
+    write(MOVE_1_OUT);
+    clear_log();
+    end_motion(CH_ACID, AXIS_HALTED, last_tag());
+    expect_evt_count(1);
+    expect_state(0, DEV_IDLE);
+    expect_call_count(0);
+
     /* The soft limit stops a move in. */
     write(MOVE_2_IN);
     clear_log();
@@ -1010,6 +1018,37 @@ static void test_sensor_fault_events(void)
     TEST_ASSERT_EQUAL_UINT(2, count_errors(ERR_SENSOR));
 }
 
+/* A reading at the rail still gives a `ph` event, but the titration never sees it */
+static void test_rail_sample_not_fed_to_titration(void)
+{
+    write(TITRATE);
+    uint32_t t_titrate = now;
+
+    /* A long wait that does not settle (the window spans 0.2 pH), up to the last reading before
+     * SETTLE_MAX_MS: from the next one on, any reading decides. */
+    for (int i = 1; now - t_titrate + SAMPLE_PERIOD_MS < SETTLE_MAX_MS; i++)
+        sample_ph(i % 2 ? 8.0f : 8.2f);
+    expect_call_count(0);
+    clear_log();
+
+    /* One reading at the rail (about pH 21) is the one that would decide: nothing happens. */
+    sample_rail();
+    TEST_ASSERT_EQUAL_UINT32(t_titrate + SETTLE_MAX_MS, now);
+    expect_call_count(0);
+    expect_evt_count(1);
+    TEST_ASSERT_EQUAL_INT(EVT_PH, fk.evt[0].kind);
+    TEST_ASSERT_TRUE(fk.evt[0].ph.ph > 20.0f);
+    TEST_ASSERT_EQUAL_INT(DEV_TITRATING, device_state(&dev));
+    TEST_ASSERT_EQUAL_UINT(0, count_errors(ERR_SENSOR)); /* a glitch, not a fault */
+
+    /* The next good reading decides on the real ones: the first dose. */
+    clear_log();
+    sample_ph(8.0f);
+    expect_call_count(1);
+    expect_start(0, CH_ACID, DIR_OUT, dose_steps(FIRST_DOSE_UL));
+    TEST_ASSERT_EQUAL_INT(DEV_TITRATING, device_state(&dev));
+}
+
 /* one ph per good sample with 2.4 conversion and current cal; none on failed read */
 static void test_ph_events(void)
 {
@@ -1158,6 +1197,7 @@ int main(void)
     RUN_TEST(test_dose_hits_empty_syringe);
     RUN_TEST(test_no_converge);
     RUN_TEST(test_sensor_fault_events);
+    RUN_TEST(test_rail_sample_not_fed_to_titration);
     RUN_TEST(test_ph_events);
     RUN_TEST(test_cal_set);
     RUN_TEST(test_disconnect_stops);

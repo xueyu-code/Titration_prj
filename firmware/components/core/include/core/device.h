@@ -98,7 +98,8 @@ void device_on_subscribe(device_t *d);
 void device_on_disconnect(device_t *d);
 
 /* One averaged ADC window (SAMPLE_PERIOD_MS). read_ok false: the ADC failed,
- * no `ph` event; it counts as being at the rail. */
+ * no `ph` event; it counts as being at the rail. A rail sample is still
+ * reported as `ph` but never fed to the titration loop. */
 void device_on_sample(device_t *d, bool read_ok, float v_adc_mv, uint32_t now_ms);
 
 /* A motion started with `tag` ended by itself (AXIS_DONE, AXIS_LIMIT_OUT,

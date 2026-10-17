@@ -409,7 +409,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
                mv = (V_adc − FE_BIAS_MV) / FE_GAIN
                pH = 7 + (mv − offset) / slope
                emit {"evt":"ph","v":pH(2 位小数),"mv":mv(1 位小数)}
-               滴定中且不在送液：titr_on_ph(pH)
+               滴定中、不在送液且不在贴边：titr_on_ph(pH)
 ```
 
 - `ph` 的频率由 ADC 采样个数决定，稳定在 2 Hz，不依赖 FreeRTOS 的 tick。

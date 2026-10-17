@@ -159,6 +159,10 @@ void device_init(device_t *d, const device_ports_t *ports, const cal_t *cal)
 void device_on_write(device_t *d, const char *data, size_t len, uint32_t now_ms)
 {
     cmd_t cmd;
+    /* data holds at most PROTO_MAX_MSG + 1 bytes, whatever len says. */
+    size_t shown = len < PROTO_MAX_MSG + 1u ? len : PROTO_MAX_MSG + 1u;
+    CLOGD(TAG, "cmd %.*s", (int)shown, data);
+
     const char *bad = proto_parse_cmd(data, len, &cmd);
 
     if (bad) {
@@ -212,9 +216,11 @@ void device_on_disconnect(device_t *d)
 
 void device_on_sample(device_t *d, bool read_ok, float v_adc_mv, uint32_t now_ms)
 {
+    bool rail = sensor_fault_at_rail(read_ok, v_adc_mv);
+
     /* The fault first, like the simulator: a titration it ends does not
      * dose on this reading. */
-    if (sensor_fault_update(&d->sensor, sensor_fault_at_rail(read_ok, v_adc_mv), now_ms)) {
+    if (sensor_fault_update(&d->sensor, rail, now_ms)) {
         CLOGI(TAG, "sensor fault");
         emit_error(d, ERR_SENSOR, -1, DIR_IN, NULL);
         if (d->state == DEV_TITRATING)
@@ -227,7 +233,9 @@ void device_on_sample(device_t *d, bool read_ok, float v_adc_mv, uint32_t now_ms
     float ph = ph_from_mv(&d->cal, mv);
     emit(d, &(evt_t){.kind = EVT_PH, .ph = {.ph = ph, .mv = mv}});
 
-    if (d->state == DEV_TITRATING) {
+    /* A reading at the rail is reported, but it is no measurement: the control
+     * loop must not average it into a decision. */
+    if (d->state == DEV_TITRATING && !rail) {
         titr_action_t a = titr_on_ph(&d->titr, ph, now_ms);
         act(d, &a, now_ms);
     }
@@ -242,6 +250,9 @@ void device_on_motion_end(device_t *d, uint8_t ch, axis_status_t st, uint32_t ta
     motion_kind_t kind = d->motion.kind;
     dir_t dir = d->motion.dir;
     d->motion.kind = MOTION_NONE;
+
+    if (st != AXIS_DONE && st != AXIS_LIMIT_OUT && st != AXIS_LIMIT_IN)
+        CLOGW(TAG, "ch %u motion ended with status %d, taken as done", (unsigned)ch + 1u, (int)st);
 
     if (st == AXIS_LIMIT_OUT || st == AXIS_LIMIT_IN) {
         CLOGI(TAG, "ch %u reached the %s limit", (unsigned)ch + 1u, st == AXIS_LIMIT_OUT ? "empty" : "full");
