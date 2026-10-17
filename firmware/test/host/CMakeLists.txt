@@ -10,6 +10,7 @@ project(titrator_host_tests C)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON) # gnu17, as ESP-IDF builds the target
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # for clangd, see firmware/.clangd
 
 if(DEFINED ENV{IDF_PATH})
     set(_idf_default "$ENV{IDF_PATH}")

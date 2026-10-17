@@ -1,0 +1,15 @@
+# Editor support (clangd).
+# - core and the host tests: the host test build (gcc), which compiles them as
+#   plain C.
+# - main and platform: the compile database of `idf.py build`, minus the
+#   GCC/Xtensa-only flags, parsed for the host target since clang has no
+#   Xtensa backend.
+CompileFlags:
+  CompilationDatabase: build
+  Remove: [-m*, -f*]
+  Add: [--target=x86_64-linux-gnu]
+---
+If:
+  PathMatch: (components/core|test/host)/.*
+CompileFlags:
+  CompilationDatabase: test/host/build
