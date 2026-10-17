@@ -106,7 +106,15 @@ class _HomePageState extends ConsumerState<HomePage> {
     final l10n = AppLocalizations.of(context);
     showSnack(context, switch (error.code) {
       'busy' => l10n.errorBusy,
-      'limit' => l10n.errorLimit,
+      'limit' => switch ((error.channel, error.direction)) {
+        (final channel?, Direction.aspirate) => l10n.errorSyringeFull(
+          channel.id,
+        ),
+        (final channel?, Direction.dispense) => l10n.errorSyringeEmpty(
+          channel.id,
+        ),
+        _ => l10n.errorLimit,
+      },
       'sensor' => l10n.errorSensor,
       'bad_cmd' => l10n.errorBadCmd,
       _ => l10n.errorGeneric(error.code, error.message ?? '').trim(),
@@ -143,9 +151,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         onStart: (target) => _run(() => _device.startTitration(target)),
         onStop: () => _run(_device.stop),
       ),
-      _SyringeCard(
-        enabled: state.connected && (idle || state.mode == DeviceMode.moving),
-      ),
+      _SyringeCard(enabled: state.connected),
       OutlinedButton.icon(
         icon: const Icon(Icons.tune),
         label: Text(l10n.calibrate),
@@ -299,7 +305,6 @@ class _PhCard extends StatelessWidget {
         DeviceMode.idle => l10n.modeIdle,
         DeviceMode.titrating => l10n.modeTitrating,
         DeviceMode.moving => l10n.modeMoving,
-        DeviceMode.calibrating => l10n.modeCalibrating,
         DeviceMode.unknown => l10n.modeUnknown,
       };
 }

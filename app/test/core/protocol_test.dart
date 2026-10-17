@@ -27,16 +27,19 @@ void main() {
         'ch': 2,
         'dir': 'in',
       });
-      expect(wire(const CalStart()), {'cmd': 'cal_start'});
-      expect(wire(const CalPoint(6.86)), {'cmd': 'cal_point', 'ph': 6.86});
-      expect(wire(const CalFinish()), {'cmd': 'cal_finish'});
-      expect(wire(const CalAbort()), {'cmd': 'cal_abort'});
+      expect(wire(const CalSet(-57.92, 4.35)), {
+        'cmd': 'cal_set',
+        'slope': -57.92,
+        'offset': 4.35,
+      });
     });
 
-    test('pH values are rounded to 2 decimals', () {
+    test('values are rounded to 2 decimals', () {
       expect((wire(const StartTitration(7.004)) as Map)['target'], 7.0);
       expect((wire(const StartTitration(7.006)) as Map)['target'], 7.01);
-      expect((wire(const CalPoint(4.0049)) as Map)['ph'], 4.0);
+      final cal = wire(const CalSet(-57.9249, -4.3551)) as Map;
+      expect(cal['slope'], -57.92);
+      expect(cal['offset'], -4.36);
       // 6.855 is not exactly representable; either neighbour is acceptable.
       expect(
         (wire(const StartTitration(6.855)) as Map)['target'],
@@ -57,6 +60,26 @@ void main() {
       expect(
         decode('{"evt":"ph","v":7}'),
         isA<PhReading>().having((e) => e.ph, 'ph', 7.0),
+      );
+    });
+
+    test('ph carries the electrode voltage', () {
+      expect(
+        decode('{"evt":"ph","v":6.98,"mv":1.2}'),
+        isA<PhReading>().having((e) => e.mv, 'mv', 1.2),
+      );
+      expect(
+        decode('{"evt":"ph","v":6.98,"mv":-30}'),
+        isA<PhReading>().having((e) => e.mv, 'mv', -30.0),
+      );
+      // Older firmware or a malformed field: still a reading, without mv.
+      expect(
+        decode('{"evt":"ph","v":6.98}'),
+        isA<PhReading>().having((e) => e.mv, 'mv', isNull),
+      );
+      expect(
+        decode('{"evt":"ph","v":6.98,"mv":"1.2"}'),
+        isA<PhReading>().having((e) => e.mv, 'mv', isNull),
       );
     });
 
@@ -82,39 +105,15 @@ void main() {
       );
     });
 
-    test('cal_point', () {
+    test('cal', () {
       expect(
-        decode('{"evt":"cal_point","ph":6.86,"ok":true,"mv":12.5}'),
-        isA<CalPointResult>()
-            .having((e) => e.bufferPh, 'bufferPh', 6.86)
-            .having((e) => e.ok, 'ok', true),
+        decode('{"evt":"cal","slope":-57.9,"offset":4}'),
+        isA<CalApplied>()
+            .having((e) => e.slope, 'slope', -57.9)
+            .having((e) => e.offset, 'offset', 4.0),
       );
-      expect(
-        decode('{"evt":"cal_point","ph":4,"ok":false}'),
-        isA<CalPointResult>().having((e) => e.ok, 'ok', false),
-      );
-      // A missing ok must not count as success.
-      expect(
-        decode('{"evt":"cal_point","ph":4}'),
-        isA<CalPointResult>().having((e) => e.ok, 'ok', false),
-      );
-    });
-
-    test('cal_done', () {
-      expect(
-        decode('{"evt":"cal_done","ok":true,"slope":98.5,"offset":-3}'),
-        isA<CalDone>()
-            .having((e) => e.ok, 'ok', true)
-            .having((e) => e.slope, 'slope', 98.5)
-            .having((e) => e.offset, 'offset', -3.0),
-      );
-      expect(
-        decode('{"evt":"cal_done","ok":false}'),
-        isA<CalDone>()
-            .having((e) => e.ok, 'ok', false)
-            .having((e) => e.slope, 'slope', isNull)
-            .having((e) => e.offset, 'offset', isNull),
-      );
+      expect(decode('{"evt":"cal","slope":-57.9}'), isNull);
+      expect(decode('{"evt":"cal","slope":"-57.9","offset":4}'), isNull);
     });
 
     test('error', () {
@@ -122,13 +121,39 @@ void main() {
         decode('{"evt":"error","code":"busy","msg":"titrating"}'),
         isA<DeviceError>()
             .having((e) => e.code, 'code', 'busy')
-            .having((e) => e.message, 'message', 'titrating'),
+            .having((e) => e.message, 'message', 'titrating')
+            .having((e) => e.channel, 'channel', isNull)
+            .having((e) => e.direction, 'direction', isNull),
       );
       expect(
         decode('{"evt":"error"}'),
         isA<DeviceError>()
             .having((e) => e.code, 'code', 'unknown')
             .having((e) => e.message, 'message', isNull),
+      );
+    });
+
+    test('limit error carries the motion that hit it', () {
+      expect(
+        decode('{"evt":"error","code":"limit","ch":1,"dir":"in"}'),
+        isA<DeviceError>()
+            .having((e) => e.code, 'code', 'limit')
+            .having((e) => e.channel, 'channel', Channel.ch1)
+            .having((e) => e.direction, 'direction', Direction.aspirate),
+      );
+      expect(
+        decode('{"evt":"error","code":"limit","ch":2,"dir":"out"}'),
+        isA<DeviceError>()
+            .having((e) => e.channel, 'channel', Channel.ch2)
+            .having((e) => e.direction, 'direction', Direction.dispense),
+      );
+      // Unknown values are dropped, not guessed.
+      expect(
+        decode('{"evt":"error","code":"limit","ch":3,"dir":"up"}'),
+        isA<DeviceError>()
+            .having((e) => e.code, 'code', 'limit')
+            .having((e) => e.channel, 'channel', isNull)
+            .having((e) => e.direction, 'direction', isNull),
       );
     });
 
@@ -149,7 +174,6 @@ void main() {
       expect(decode('{"evt":"reboot"}'), isNull);
       expect(decode('{"evt":"ph"}'), isNull);
       expect(decode('{"evt":"ph","v":"7"}'), isNull);
-      expect(decode('{"evt":"cal_point","ok":true}'), isNull);
     });
   });
 }

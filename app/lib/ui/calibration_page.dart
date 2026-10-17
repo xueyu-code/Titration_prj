@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/protocol.dart';
+import '../core/calibration.dart';
 import '../l10n/app_localizations.dart';
 import '../state/calibration_controller.dart';
-import '../state/device_controller.dart';
 import 'format.dart';
 import 'widgets/confirm_dialog.dart';
 import 'widgets/language_button.dart';
@@ -44,11 +43,8 @@ class CalibrationPage extends ConsumerWidget {
             ),
             CalPhase.measuring ||
             CalPhase.sampling => _MeasureView(cal: cal, controller: controller),
-            CalPhase.finishing => _Progress(l10n.calFinishing),
-            CalPhase.done => _ResultView(
-              result: cal.result,
-              onRetry: controller.abort,
-            ),
+            CalPhase.applying => _Progress(l10n.calApplying),
+            CalPhase.done => _ResultView(cal.fit!),
           },
         ),
       ),
@@ -56,18 +52,20 @@ class CalibrationPage extends ConsumerWidget {
   }
 }
 
-Future<void> _abortAndLeave(
-  BuildContext context,
-  CalibrationController controller,
-) async {
-  final navigator = Navigator.of(context);
-  await controller.abort();
-  navigator.pop();
+void _abortAndLeave(BuildContext context, CalibrationController controller) {
+  controller.abort();
+  Navigator.of(context).pop();
 }
 
 String _issueText(AppLocalizations l10n, CalIssue issue) => switch (issue) {
-  CalIssue.pointRejected => l10n.calPointRejected,
+  CalIssue.unstable => l10n.calUnstable,
+  CalIssue.outOfRange => l10n.calOutOfRange(
+    (CalibrationFit.minEfficiency * 100).round(),
+    (CalibrationFit.maxEfficiency * 100).round(),
+    CalibrationFit.maxOffset.round(),
+  ),
   CalIssue.timeout => l10n.calTimeout,
+  CalIssue.rejected => l10n.calRejected,
   CalIssue.link => l10n.calLink,
 };
 
@@ -147,19 +145,19 @@ class _SetupViewState extends State<_SetupView> {
   }
 }
 
-class _MeasureView extends ConsumerWidget {
+class _MeasureView extends StatelessWidget {
   const _MeasureView({required this.cal, required this.controller});
 
   final CalibrationState cal;
   final CalibrationController controller;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final ph = ref.watch(deviceProvider.select((s) => s.ph));
     final sampling = cal.phase == CalPhase.sampling;
     final issue = cal.issue;
+    final fit = cal.fit;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -179,6 +177,7 @@ class _MeasureView extends ConsumerWidget {
                         : (i == cal.index
                               ? _StepStatus.current
                               : _StepStatus.pending),
+                    mv: i < cal.index ? cal.points[i].mv : null,
                   ),
               ],
             ),
@@ -190,13 +189,13 @@ class _MeasureView extends ConsumerWidget {
             child: Column(
               children: [
                 Text(
-                  l10n.ph,
+                  l10n.calElectrode,
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
                 Text(
-                  formatPh(ph),
+                  l10n.calMv(formatMv(cal.mv)),
                   style: theme.textTheme.displayMedium?.copyWith(
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
@@ -206,6 +205,7 @@ class _MeasureView extends ConsumerWidget {
           ),
         ),
         if (issue != null) _IssueText(issue),
+        if (issue == CalIssue.outOfRange && fit != null) _FitLines(fit),
         if (cal.allRecorded)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -217,7 +217,7 @@ class _MeasureView extends ConsumerWidget {
           )
         else
           FilledButton(
-            onPressed: sampling ? null : controller.sample,
+            onPressed: sampling ? null : controller.record,
             child: sampling
                 ? Row(
                     mainAxisSize: MainAxisSize.min,
@@ -230,12 +230,17 @@ class _MeasureView extends ConsumerWidget {
                       Flexible(child: Text(l10n.calSampling)),
                     ],
                   )
-                : Text(l10n.calSample),
+                : Text(l10n.calRecord),
           ),
         FilledButton.tonal(
           onPressed: cal.canFinish ? controller.finish : null,
           child: Text(l10n.calFinish),
         ),
+        if (issue == CalIssue.outOfRange)
+          OutlinedButton(
+            onPressed: controller.abort,
+            child: Text(l10n.calAgain),
+          ),
         if (cal.index < minCalibrationPoints)
           Text(
             l10n.calMinPoints(minCalibrationPoints),
@@ -258,10 +263,13 @@ enum _StepStatus { done, current, pending }
 /// One buffer solution in the calibration sequence; the current one shows
 /// the instructions.
 class _StepTile extends StatelessWidget {
-  const _StepTile({required this.buffer, required this.status});
+  const _StepTile({required this.buffer, required this.status, this.mv});
 
   final double buffer;
   final _StepStatus status;
+
+  /// Recorded electrode voltage of a finished step.
+  final double? mv;
 
   @override
   Widget build(BuildContext context) {
@@ -303,6 +311,7 @@ class _StepTile extends StatelessWidget {
             ],
           ),
         ),
+        if (mv != null) Text(l10n.calMv(formatMv(mv))),
       ],
     );
   }
@@ -326,29 +335,39 @@ class _Progress extends StatelessWidget {
   );
 }
 
-class _ResultView extends StatelessWidget {
-  const _ResultView({required this.result, required this.onRetry});
+/// Slope and offset of a fit.
+class _FitLines extends StatelessWidget {
+  const _FitLines(this.fit);
 
-  final CalDone? result;
-  final VoidCallback onRetry;
+  final CalibrationFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      children: [
+        Text(
+          l10n.calSlope(
+            fit.slope.toStringAsFixed(1),
+            (fit.efficiency * 100).toStringAsFixed(1),
+          ),
+        ),
+        Text(l10n.calOffset(formatMv(fit.offset))),
+      ],
+    );
+  }
+}
+
+class _ResultView extends StatelessWidget {
+  const _ResultView(this.fit);
+
+  final CalibrationFit fit;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final ok = result?.ok ?? false;
-    final slope = result?.slope;
-    final offset = result?.offset;
-    final color = ok ? theme.colorScheme.primary : theme.colorScheme.error;
-    final done = ok
-        ? FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(l10n.done),
-          )
-        : TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(l10n.done),
-          );
+    final color = theme.colorScheme.primary;
 
     return Padding(
       padding: const EdgeInsets.only(top: 32),
@@ -356,25 +375,25 @@ class _ResultView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 12,
         children: [
-          Icon(ok ? Icons.check_circle : Icons.error, size: 64, color: color),
+          Icon(Icons.check_circle, size: 64, color: color),
           Text(
-            ok ? l10n.calSuccess : l10n.calFailed,
+            l10n.calSuccess,
             textAlign: TextAlign.center,
             style: theme.textTheme.headlineSmall?.copyWith(color: color),
           ),
-          if (ok && slope != null)
-            Text(
-              l10n.calSlope(slope.toStringAsFixed(1)),
-              textAlign: TextAlign.center,
+          _FitLines(fit),
+          Text(
+            l10n.calApplied,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-          if (ok && offset != null)
-            Text(
-              l10n.calOffset(offset.toStringAsFixed(1)),
-              textAlign: TextAlign.center,
-            ),
+          ),
           const SizedBox(height: 12),
-          if (!ok) FilledButton(onPressed: onRetry, child: Text(l10n.calAgain)),
-          done,
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.done),
+          ),
         ],
       ),
     );

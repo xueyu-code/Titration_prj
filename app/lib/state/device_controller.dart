@@ -143,7 +143,15 @@ class DeviceController extends Notifier<DeviceState> {
   }
 
   /// Sends a raw command (move / jog). Throws [LinkException].
-  Future<void> send(Command command) => _link.send(command);
+  ///
+  /// Moving a syringe ends a running titration on the device, so the app
+  /// forgets it first: the completion detector must not stop that motion.
+  Future<void> send(Command command) {
+    if (_detector != null && (command is Move || command is Jog)) {
+      _clearTarget();
+    }
+    return _link.send(command);
+  }
 
   void _onStatus(LinkStatus status) {
     // Anything but an established connection going away is handled by

@@ -13,6 +13,9 @@ enum Channel {
   ch2;
 
   int get id => index + 1;
+
+  static Channel? parse(Object? id) =>
+      values.where((c) => c.id == id).firstOrNull;
 }
 
 enum Direction {
@@ -21,13 +24,15 @@ enum Direction {
 
   const Direction(this.wire);
   final String wire;
+
+  static Direction? parse(Object? wire) =>
+      values.where((d) => d.wire == wire).firstOrNull;
 }
 
 enum DeviceMode {
   idle,
   titrating,
   moving,
-  calibrating,
   unknown;
 
   static DeviceMode parse(Object? s) =>
@@ -90,33 +95,20 @@ final class Jog extends Command {
   };
 }
 
-final class CalStart extends Command {
-  const CalStart();
+/// Stores the electrode calibration on the device: [slope] in mV per pH unit
+/// (negative) and [offset], the mV at pH 7. The device answers with
+/// [CalApplied].
+final class CalSet extends Command {
+  const CalSet(this.slope, this.offset);
+  final double slope;
+  final double offset;
 
   @override
-  Map<String, Object> toJson() => {'cmd': 'cal_start'};
-}
-
-final class CalPoint extends Command {
-  const CalPoint(this.bufferPh);
-  final double bufferPh;
-
-  @override
-  Map<String, Object> toJson() => {'cmd': 'cal_point', 'ph': _round2(bufferPh)};
-}
-
-final class CalFinish extends Command {
-  const CalFinish();
-
-  @override
-  Map<String, Object> toJson() => {'cmd': 'cal_finish'};
-}
-
-final class CalAbort extends Command {
-  const CalAbort();
-
-  @override
-  Map<String, Object> toJson() => {'cmd': 'cal_abort'};
+  Map<String, Object> toJson() => {
+    'cmd': 'cal_set',
+    'slope': _round2(slope),
+    'offset': _round2(offset),
+  };
 }
 
 double _round2(double v) => (v * 100).roundToDouble() / 100;
@@ -137,20 +129,18 @@ sealed class DeviceEvent {
     }
     if (json is! Map<String, Object?>) return null;
     return switch (json) {
-      {'evt': 'ph', 'v': final num v} => PhReading(v.toDouble()),
+      {'evt': 'ph', 'v': final num v} => PhReading(
+        v.toDouble(),
+        mv: _num(json['mv']),
+      ),
       {'evt': 'state'} => ModeChanged(DeviceMode.parse(json['s'])),
-      {'evt': 'cal_point', 'ph': final num ph} => CalPointResult(
-        ph.toDouble(),
-        ok: json['ok'] == true,
-      ),
-      {'evt': 'cal_done'} => CalDone(
-        ok: json['ok'] == true,
-        slope: _num(json['slope']),
-        offset: _num(json['offset']),
-      ),
+      {'evt': 'cal', 'slope': final num slope, 'offset': final num offset} =>
+        CalApplied(slope.toDouble(), offset.toDouble()),
       {'evt': 'error'} => DeviceError(
         _str(json['code']) ?? 'unknown',
-        _str(json['msg']),
+        message: _str(json['msg']),
+        channel: Channel.parse(json['ch']),
+        direction: Direction.parse(json['dir']),
       ),
       _ => null,
     };
@@ -158,8 +148,11 @@ sealed class DeviceEvent {
 }
 
 final class PhReading extends DeviceEvent {
-  const PhReading(this.ph);
+  const PhReading(this.ph, {this.mv});
   final double ph;
+
+  /// Raw electrode voltage; null when the firmware does not report it.
+  final double? mv;
 }
 
 final class ModeChanged extends DeviceEvent {
@@ -167,23 +160,21 @@ final class ModeChanged extends DeviceEvent {
   final DeviceMode mode;
 }
 
-final class CalPointResult extends DeviceEvent {
-  const CalPointResult(this.bufferPh, {required this.ok});
-  final double bufferPh;
-  final bool ok;
-}
-
-final class CalDone extends DeviceEvent {
-  const CalDone({required this.ok, this.slope, this.offset});
-  final bool ok;
-  final double? slope;
-  final double? offset;
+/// The calibration the device stored, in answer to [CalSet].
+final class CalApplied extends DeviceEvent {
+  const CalApplied(this.slope, this.offset);
+  final double slope;
+  final double offset;
 }
 
 final class DeviceError extends DeviceEvent {
-  const DeviceError(this.code, [this.message]);
+  const DeviceError(this.code, {this.message, this.channel, this.direction});
   final String code;
   final String? message;
+
+  /// The motion that hit a `limit`; null for other errors.
+  final Channel? channel;
+  final Direction? direction;
 }
 
 double? _num(Object? v) => v is num ? v.toDouble() : null;

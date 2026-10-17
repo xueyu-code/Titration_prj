@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/calibration.dart';
 import '../core/protocol.dart';
+import '../ui/format.dart';
 import 'sim_link.dart';
 import 'sim_titrator.dart';
 
@@ -29,6 +31,11 @@ class SimPanel extends StatefulWidget {
 class _SimPanelState extends State<SimPanel> {
   bool _open = false;
   late final Timer _refresh;
+
+  /// Every standard buffer pH, ascending.
+  static final _buffers = ({
+    for (final set in calibrationBufferSets) ...set,
+  }.toList()..sort());
 
   SimTitrator get _sim => widget.sim;
 
@@ -111,8 +118,22 @@ class _SimPanelState extends State<SimPanel> {
               Text(
                 'pH ${_sim.samplePh.toStringAsFixed(2)}  '
                 '${_sim.mode.name}\n'
-                '针筒1 ${ml(Channel.ch1)} mL  针筒2 ${ml(Channel.ch2)} mL',
+                '针筒1 ${ml(Channel.ch1)} mL  针筒2 ${ml(Channel.ch2)} mL\n'
+                '电极 ${_sim.electrodeMv.toStringAsFixed(1)} mV',
                 style: textStyle,
+              ),
+              const SizedBox(height: 8),
+              Text('电极位置', style: textStyle),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final ph in [null, ..._buffers])
+                    ChoiceChip(
+                      label: Text(ph == null ? '样品' : formatPh(ph)),
+                      selected: _sim.bufferPh == ph,
+                      onSelected: (_) => setState(() => _sim.bufferPh = ph),
+                    ),
+                ],
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -129,11 +150,6 @@ class _SimPanelState extends State<SimPanel> {
                   ActionChip(
                     label: const Text('电极错误'),
                     onPressed: () => _sim.injectError('sensor'),
-                  ),
-                  FilterChip(
-                    label: const Text('下个标定点失败'),
-                    selected: _sim.rejectNextPoint,
-                    onSelected: (v) => setState(() => _sim.rejectNextPoint = v),
                   ),
                   ActionChip(
                     label: const Text('换新样品'),

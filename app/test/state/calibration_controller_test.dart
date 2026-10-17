@@ -11,6 +11,13 @@ import 'fakes.dart';
 void main() {
   const buffers = [6.86, 4.00, 9.18];
 
+  /// Spacing of the readings, as the firmware reports them.
+  const reading = Duration(milliseconds: 500);
+
+  // Electrode voltages in those buffers for a slope of -57.4 and an offset
+  // of 6.5 mV.
+  const mvs = [14.5, 178.7, -118.6];
+
   late FakeDeviceLink link;
   late ProviderContainer container;
 
@@ -32,211 +39,364 @@ void main() {
     addTearDown(container.dispose);
   });
 
-  Future<void> answer(DeviceEvent event) async {
-    link.emit(event);
+  /// Delivers [count] readings of [mv].
+  Future<void> feed(double mv, [int count = 1]) async {
+    for (var i = 0; i < count; i++) {
+      link.emit(PhReading(7.0, mv: mv));
+    }
     await settle();
   }
 
-  /// Samples the current buffer and the device accepts it.
-  Future<void> acceptPoint() async {
-    final ph = buffers[state().index];
-    await controller().sample();
+  /// Records the current buffer with a steady voltage of [mv].
+  Future<void> recordPoint(double mv) async {
+    controller().record();
     expect(state().phase, CalPhase.sampling);
-    await answer(CalPointResult(ph, ok: true));
+    await feed(mv, 10);
+    expect(state().phase, CalPhase.measuring);
   }
 
-  test('happy path: start, three points, finish, done', () async {
+  /// Starts a calibration with [buffers] and records the first points, one
+  /// steady voltage each.
+  Future<void> recordPoints(List<double> voltages) async {
+    controller().start(buffers);
+    for (final mv in voltages) {
+      await recordPoint(mv);
+    }
+  }
+
+  test('happy path: three points, fit, apply, done', () async {
     expect(state().phase, CalPhase.setup);
-    await controller().start(buffers);
+    controller().start(buffers);
     expect(state().phase, CalPhase.measuring);
     expect(state().buffers, buffers);
-    expect(state().index, 0);
-    expect(link.sent.last, {'cmd': 'cal_start'});
+    expect(state().points, isEmpty);
 
-    await controller().sample();
-    expect(link.sent.last, {'cmd': 'cal_point', 'ph': 6.86});
+    controller().record();
     expect(state().phase, CalPhase.sampling);
-    // Sampling cannot be started twice.
-    await controller().sample();
-    expect(link.sent, hasLength(2));
-
-    await answer(const CalPointResult(6.86, ok: true));
+    await feed(mvs[0], 9);
+    expect(state().phase, CalPhase.sampling, reason: 'window not full yet');
+    await feed(mvs[0]);
     expect(state().phase, CalPhase.measuring);
+    expect(state().points.single.ph, 6.86);
+    expect(state().points.single.mv, closeTo(14.5, 1e-9));
     expect(state().index, 1);
     expect(state().canFinish, isFalse);
 
-    await acceptPoint();
-    expect(link.sent.last, {'cmd': 'cal_point', 'ph': 4.0});
-    expect(state().index, 2);
+    await recordPoint(mvs[1]);
+    expect(state().points.last.ph, 4.0);
+    expect(state().points.last.mv, closeTo(178.7, 1e-9));
     expect(state().canFinish, isTrue);
 
-    await acceptPoint();
-    expect(link.sent.last, {'cmd': 'cal_point', 'ph': 9.18});
+    await recordPoint(mvs[2]);
     expect(state().allRecorded, isTrue);
-    await controller().sample(); // nothing left to sample
+    controller().record(); // nothing left to record
     expect(state().phase, CalPhase.measuring);
 
-    await controller().finish();
-    expect(state().phase, CalPhase.finishing);
-    expect(link.sent.last, {'cmd': 'cal_finish'});
+    expect(link.sent, isEmpty, reason: 'nothing is sent before finishing');
+    final finishing = controller().finish();
+    expect(state().phase, CalPhase.applying);
+    await finishing;
+    final sent = link.sent.single;
+    expect(sent['cmd'], 'cal_set');
+    expect(sent['slope'], closeTo(-57.4, 0.1));
+    expect(sent['offset'], closeTo(6.5, 0.1));
 
-    await answer(const CalDone(ok: true, slope: 98.5, offset: -2.0));
+    link.emit(const CalApplied(-57.4, 6.5));
+    await settle();
     expect(state().phase, CalPhase.done);
-    expect(state().result?.slope, 98.5);
-    expect(state().result?.offset, -2.0);
+    expect(state().fit?.slope, closeTo(-57.4, 0.1));
+    expect(state().fit?.offset, closeTo(6.5, 0.1));
+    expect(state().issue, isNull);
   });
 
-  test('finishing early is allowed from two points', () async {
-    await controller().start(buffers);
-    await controller().finish(); // no points yet
-    expect(state().phase, CalPhase.measuring);
+  test('the live voltage follows the readings in every phase', () async {
+    await feed(3.0);
+    expect(state().mv, 3.0, reason: 'setup');
 
-    await acceptPoint();
-    await controller().finish(); // one point is not enough
-    expect(state().phase, CalPhase.measuring);
+    controller().start(buffers);
+    expect(state().mv, 3.0, reason: 'kept across the phase change');
+    await feed(4.5);
+    expect(state().mv, 4.5);
 
-    await acceptPoint();
+    link.emit(const PhReading(7.0)); // no voltage reported
+    await settle();
+    expect(state().mv, 4.5);
+  });
+
+  test('a reading is recorded only after it has settled', () async {
+    controller().start(buffers);
+    controller().record();
+    for (var i = 0; i < 10; i++) {
+      await feed(i.isEven ? 10.0 : 15.0);
+    }
+    expect(state().phase, CalPhase.sampling);
+    expect(state().points, isEmpty);
+
+    // The mean of the settled window is recorded, not the last reading.
+    for (final mv in [20.0, 20.2, 19.8, 20.0, 20.4, 19.6, 20.0, 20.0, 20.2]) {
+      await feed(mv);
+    }
+    expect(state().phase, CalPhase.sampling, reason: 'one old reading left');
+    await feed(19.8);
+    expect(state().phase, CalPhase.measuring);
+    expect(state().points.single.mv, closeTo(20.0, 1e-9));
+  });
+
+  test('steady readings outside sampling are not recorded', () async {
+    await feed(10.0, 20);
+    expect(state().phase, CalPhase.setup);
+    controller().start(buffers);
+    await feed(10.0, 20);
+    expect(state().phase, CalPhase.measuring);
+    expect(state().points, isEmpty);
+  });
+
+  test('finishing needs two points', () async {
+    controller().start(buffers);
     await controller().finish();
-    expect(state().phase, CalPhase.finishing);
+    expect(state().phase, CalPhase.measuring);
+
+    await recordPoint(mvs[0]);
+    await controller().finish();
+    expect(state().phase, CalPhase.measuring);
+    expect(link.sent, isEmpty);
+
+    await recordPoint(mvs[1]);
+    await controller().finish();
+    expect(state().phase, CalPhase.applying);
   });
 
-  test('a rejected point can be retried', () async {
-    await controller().start(buffers);
-    await controller().sample();
-    await answer(const CalPointResult(6.86, ok: false));
-    expect(state().phase, CalPhase.measuring);
-    expect(state().index, 0);
-    expect(state().issue, CalIssue.pointRejected);
+  group('electrode outside the acceptable range', () {
+    test('a weak slope is reported with the fit and nothing is sent', () async {
+      await recordPoints([5.6, 120.0]); // slope -40, 68 % efficiency
+      await controller().finish();
 
-    await controller().sample();
-    expect(state().issue, isNull, reason: 'the next action clears the issue');
-    await answer(const CalPointResult(6.86, ok: true));
-    expect(state().index, 1);
+      expect(state().phase, CalPhase.measuring);
+      expect(state().issue, CalIssue.outOfRange);
+      expect(state().fit?.slope, closeTo(-40, 1e-9));
+      expect(state().fit?.acceptable, isFalse);
+      expect(link.sent, isEmpty);
+      expect(state().points, hasLength(2), reason: 'points are kept');
+
+      controller().record();
+      expect(state().issue, isNull, reason: 'the next action clears it');
+
+      controller().abort();
+      expect(state().phase, CalPhase.setup);
+      expect(state().fit, isNull);
+    });
+
+    test('a large offset is reported too', () async {
+      // Slope -57.4 around an offset of 80 mV.
+      await recordPoints([88.0, 252.2]);
+      await controller().finish();
+      expect(state().issue, CalIssue.outOfRange);
+      expect(state().fit?.offset, closeTo(80, 0.1));
+    });
+  });
+
+  group('unstable reading', () {
+    test('times out and can be retried', () {
+      fakeAsync((async) {
+        final c = makeContainer();
+        final notifier = c.read(calibrationProvider.notifier);
+        CalibrationState current() => c.read(calibrationProvider);
+
+        notifier.start(buffers);
+        notifier.record();
+        // A reading that keeps jumping, twice a second.
+        var high = false;
+        void jitter(Duration span) {
+          for (var t = Duration.zero; t < span; t += reading) {
+            high = !high;
+            link.emit(PhReading(7.0, mv: high ? 10.0 : 14.0));
+            async.elapse(reading);
+          }
+        }
+
+        jitter(CalibrationController.sampleTimeout * 0.9);
+        expect(current().phase, CalPhase.sampling);
+        jitter(CalibrationController.sampleTimeout * 0.2);
+        expect(current().phase, CalPhase.measuring);
+        expect(current().issue, CalIssue.unstable);
+        expect(current().points, isEmpty);
+
+        // Readings keep the message on display.
+        link.emit(const PhReading(7.0, mv: 12.0));
+        async.flushMicrotasks();
+        expect(current().issue, CalIssue.unstable);
+        expect(current().mv, 12.0);
+
+        // Retry on a steady reading.
+        notifier.record();
+        expect(current().issue, isNull);
+        for (var i = 0; i < 10; i++) {
+          link.emit(const PhReading(7.0, mv: 12.0));
+          async.elapse(reading);
+        }
+        expect(current().phase, CalPhase.measuring);
+        expect(current().points.single.mv, closeTo(12.0, 1e-9));
+
+        // The timer is gone: no late failure.
+        async.elapse(CalibrationController.sampleTimeout * 2);
+        expect(current().issue, isNull);
+        expect(current().points, hasLength(1));
+
+        c.dispose();
+      });
+    });
+  });
+
+  group('applying', () {
+    test('an unanswered cal_set times out and can be retried', () {
+      fakeAsync((async) {
+        final c = makeContainer();
+        final notifier = c.read(calibrationProvider.notifier);
+        CalibrationState current() => c.read(calibrationProvider);
+
+        notifier.start(buffers);
+        for (final mv in mvs.take(2)) {
+          notifier.record();
+          for (var i = 0; i < 10; i++) {
+            link.emit(PhReading(7.0, mv: mv));
+            async.elapse(reading);
+          }
+        }
+        notifier.finish();
+        async.flushMicrotasks();
+        expect(current().phase, CalPhase.applying);
+
+        async.elapse(CalibrationController.applyTimeout * 0.9);
+        expect(current().phase, CalPhase.applying);
+        async.elapse(CalibrationController.applyTimeout * 0.2);
+        expect(current().phase, CalPhase.measuring);
+        expect(current().issue, CalIssue.timeout);
+        expect(current().points, hasLength(2));
+
+        // A late confirmation is not mistaken for the next one.
+        link.emit(const CalApplied(-57.4, 6.5));
+        async.flushMicrotasks();
+        expect(current().phase, CalPhase.measuring);
+
+        notifier.finish();
+        async.flushMicrotasks();
+        expect(current().phase, CalPhase.applying);
+        expect(link.sent, hasLength(2));
+        link.emit(const CalApplied(-57.4, 6.5));
+        async.flushMicrotasks();
+        expect(current().phase, CalPhase.done);
+        async.elapse(CalibrationController.applyTimeout * 2);
+        expect(current().phase, CalPhase.done);
+
+        c.dispose();
+      });
+    });
+
+    test('a device error means the parameters were rejected', () async {
+      await recordPoints(mvs.take(2).toList());
+      await controller().finish();
+      link.emit(const DeviceError('bad_cmd'));
+      await settle();
+
+      expect(state().phase, CalPhase.measuring);
+      expect(state().issue, CalIssue.rejected);
+      expect(state().points, hasLength(2));
+    });
+
+    test('a failed write is a link issue', () async {
+      await recordPoints(mvs.take(2).toList());
+      link.sendError = const LinkException(LinkFailure.failed);
+      await controller().finish();
+
+      expect(state().phase, CalPhase.measuring);
+      expect(state().issue, CalIssue.link);
+    });
   });
 
   test('stale or unrelated events are ignored', () async {
-    await controller().start(buffers);
-    await answer(const CalPointResult(6.86, ok: true));
-    await answer(const CalDone(ok: true));
-    await answer(const PhReading(7.0));
-    expect(state().phase, CalPhase.measuring);
-    expect(state().index, 0);
+    controller().start(buffers);
+    controller().record();
+    link.emit(const CalApplied(-57.4, 6.5));
+    link.emit(const DeviceError('limit'));
+    link.emit(const ModeChanged(DeviceMode.moving));
+    await settle();
+    expect(state().phase, CalPhase.sampling);
+    expect(state().issue, isNull);
   });
 
-  test('send failures become a link issue', () async {
-    link.sendError = const LinkException(LinkFailure.failed);
-    await controller().start(buffers);
-    expect(state().phase, CalPhase.setup);
-    expect(state().issue, CalIssue.link);
+  group('link', () {
+    test('a drop while sampling returns to setup', () async {
+      await recordPoints([mvs[0]]);
+      controller().record();
+      link.emitStatus(LinkStatus.disconnected);
+      await settle();
 
-    link.sendError = null;
-    await controller().start(buffers);
-    link.sendError = const LinkException(LinkFailure.failed);
-    await controller().sample();
-    expect(state().phase, CalPhase.measuring);
-    expect(state().issue, CalIssue.link);
+      expect(state().phase, CalPhase.setup);
+      expect(state().issue, CalIssue.link);
+      expect(state().points, isEmpty);
+    });
+
+    test('a drop while applying returns to setup', () async {
+      await recordPoints(mvs.take(2).toList());
+      await controller().finish();
+      link.emitStatus(LinkStatus.disconnected);
+      await settle();
+
+      expect(state().phase, CalPhase.setup);
+      expect(state().issue, CalIssue.link);
+    });
+
+    test('a drop before starting or after finishing changes nothing', () async {
+      link.emitStatus(LinkStatus.disconnected);
+      await settle();
+      expect(state().issue, isNull);
+
+      await recordPoints(mvs.take(2).toList());
+      await controller().finish();
+      link.emit(const CalApplied(-57.4, 6.5));
+      await settle();
+      link.emitStatus(LinkStatus.disconnected);
+      await settle();
+      expect(state().phase, CalPhase.done);
+      expect(state().issue, isNull);
+    });
   });
 
-  test('an unanswered point or finish times out', () {
+  test('abort discards everything and stops waiting', () {
     fakeAsync((async) {
       final c = makeContainer();
       final notifier = c.read(calibrationProvider.notifier);
       CalibrationState current() => c.read(calibrationProvider);
 
       notifier.start(buffers);
-      async.flushMicrotasks();
-      notifier.sample();
-      async.flushMicrotasks();
-      expect(current().phase, CalPhase.sampling);
+      notifier.record();
+      notifier.abort();
+      expect(current().phase, CalPhase.setup);
+      expect(current().buffers, isEmpty);
 
-      async.elapse(CalibrationController.answerTimeout * 0.9);
-      expect(current().phase, CalPhase.sampling);
-      async.elapse(CalibrationController.answerTimeout * 0.2);
-      expect(current().phase, CalPhase.measuring);
-      expect(current().issue, CalIssue.timeout);
-
-      // Both required points, then finish without an answer.
-      for (var i = 0; i < 2; i++) {
-        notifier.sample();
-        async.flushMicrotasks();
-        link.emit(CalPointResult(buffers[i], ok: true));
-        async.flushMicrotasks();
+      for (var i = 0; i < 10; i++) {
+        link.emit(const PhReading(7.0, mv: 10.0));
+        async.elapse(reading);
       }
-      notifier.finish();
-      async.flushMicrotasks();
-      expect(current().phase, CalPhase.finishing);
-      async.elapse(CalibrationController.answerTimeout);
-      expect(current().phase, CalPhase.measuring);
-      expect(current().issue, CalIssue.timeout);
-      expect(current().index, 2);
+      async.elapse(CalibrationController.sampleTimeout * 2);
+      expect(current().phase, CalPhase.setup);
+      expect(current().points, isEmpty);
+      expect(current().issue, isNull);
 
       c.dispose();
     });
   });
 
-  test('a late answer does not fire the timeout', () {
+  test('disposing mid-calibration sends nothing and stops the timers', () {
     fakeAsync((async) {
       final c = makeContainer();
       final notifier = c.read(calibrationProvider.notifier);
-
       notifier.start(buffers);
-      async.flushMicrotasks();
-      notifier.sample();
-      async.flushMicrotasks();
-      link.emit(const CalPointResult(6.86, ok: true));
-      async.flushMicrotasks();
-      async.elapse(CalibrationController.answerTimeout * 2);
-      expect(c.read(calibrationProvider).issue, isNull);
-
+      notifier.record();
       c.dispose();
+      async.elapse(CalibrationController.sampleTimeout * 2);
+      expect(link.sent, isEmpty);
+      expect(async.pendingTimers, isEmpty);
     });
-  });
-
-  test('a link drop in progress returns to setup', () async {
-    await controller().start(buffers);
-    await acceptPoint();
-    link.emitStatus(LinkStatus.disconnected);
-    await settle();
-    expect(state().phase, CalPhase.setup);
-    expect(state().issue, CalIssue.link);
-    expect(state().index, 0);
-  });
-
-  test('abort sends cal_abort and resets', () async {
-    await controller().start(buffers);
-    await controller().abort();
-    expect(link.sent.last, {'cmd': 'cal_abort'});
-    expect(state().phase, CalPhase.setup);
-    expect(state().buffers, isEmpty);
-
-    link.sent.clear();
-    await controller().abort(); // nothing to abort
-    expect(link.sent, isEmpty);
-  });
-
-  test('disposing mid-calibration sends cal_abort', () async {
-    await controller().start(buffers);
-    await acceptPoint();
-    container.dispose();
-    await settle();
-    expect(link.sent.last, {'cmd': 'cal_abort'});
-  });
-
-  test('disposing after completion or before start sends nothing', () async {
-    container.dispose();
-    await settle();
-    expect(link.sent, isEmpty);
-
-    link = FakeDeviceLink();
-    container = makeContainer();
-    await controller().start(buffers);
-    await acceptPoint();
-    await acceptPoint();
-    await controller().finish();
-    await answer(const CalDone(ok: true));
-    link.sent.clear();
-    container.dispose();
-    await settle();
-    expect(link.sent, isEmpty);
   });
 }

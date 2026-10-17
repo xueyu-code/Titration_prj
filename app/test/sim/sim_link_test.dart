@@ -49,7 +49,7 @@ void main() {
         expect(sim.mode, DeviceMode.idle);
         async.elapse(ms(100));
         expect(sim.mode, DeviceMode.moving);
-        expect(sim.syringeMl(Channel.ch1), lessThan(10));
+        expect(sim.syringeMl(Channel.ch1), lessThan(SimTitrator.initialMl));
 
         link.dispose();
       });

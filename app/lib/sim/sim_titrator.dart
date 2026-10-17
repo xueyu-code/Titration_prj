@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import '../core/calibration.dart';
 import '../core/protocol.dart';
 
 /// A titrator without hardware: firmware behaviour plus the beaker it acts on.
@@ -25,6 +26,10 @@ class SimTitrator {
   static const jogTimeout = Duration(seconds: 1);
   static const capacityMl = 10.0;
 
+  /// Both syringes start partly filled, so aspirating and dispensing work at
+  /// once; a titration needs at most about 5.5 mL.
+  static const initialMl = 8.0;
+
   /// Wait after each titration dose for mixing and the electrode response.
   static const mixDelay = Duration(seconds: 2);
 
@@ -36,12 +41,14 @@ class SimTitrator {
   static const minDoseMl = 0.005;
   static const maxDoseMl = 0.5;
 
-  /// Time the device needs to sample one calibration point.
-  static const calSampling = Duration(seconds: 3);
+  /// The true response of the simulated electrode, which is not ideal: what
+  /// calibration finds out. Slope in mV per pH unit, offset in mV at pH 7.
+  static const electrodeSlope = -57.4;
+  static const electrodeOffset = 6.5;
 
   static const reportInterval = Duration(milliseconds: 500);
   static const _probeTau = 1.5; // seconds
-  static const _noiseSd = 0.004;
+  static const _noiseSd = 0.25; // mV
   static const _maxStep = Duration(milliseconds: 50);
 
   /// Net strong base per litre of reagent, by channel: 0.1 M acid, 0.1 M base.
@@ -51,29 +58,13 @@ class SimTitrator {
     microseconds: (stepMl / pumpMlPerSecond * 1e6).round(),
   );
 
-  static const _all = {
-    'titrate',
-    'stop',
-    'move',
-    'jog',
-    'cal_start',
-    'cal_point',
-    'cal_finish',
-    'cal_abort',
-  };
+  static const _all = {'titrate', 'stop', 'move', 'jog', 'cal_set'};
 
   /// Commands accepted per mode (protocol section 3).
   static const _accepts = {
     DeviceMode.idle: _all,
-    DeviceMode.titrating: {'stop'},
-    DeviceMode.moving: {'move', 'jog', 'stop'},
-    DeviceMode.calibrating: {
-      'cal_start',
-      'cal_point',
-      'cal_finish',
-      'cal_abort',
-      'stop',
-    },
+    DeviceMode.titrating: {'stop', 'move', 'jog'},
+    DeviceMode.moving: {'stop', 'move', 'jog'},
   };
 
   static void _discard(List<int> _) {}
@@ -81,17 +72,22 @@ class SimTitrator {
   /// Receives each EVT notification. [SimDeviceLink] takes this over.
   void Function(List<int> bytes) onNotify;
 
-  /// Makes the next calibration point fail once.
-  bool rejectNextPoint = false;
+  /// The buffer (its pH) the electrode is dipped in; null: in the sample.
+  double? bufferPh;
 
   final Random _random;
-  final _syringeMl = [capacityMl, capacityMl];
+  final _syringeMl = [initialMl, initialMl];
   late _Beaker _beaker;
   var _mode = DeviceMode.idle;
   var _now = Duration.zero;
 
-  /// What the electrode shows: the pH of its surroundings, with a lag.
+  /// The pH the electrode currently feels: that of its surroundings, with a
+  /// lag.
   late double _probe;
+
+  // The stored calibration; factory defaults until `cal_set` (protocol 2.4).
+  var _calSlope = idealSlope;
+  var _calOffset = 0.0;
 
   // Report schedule.
   var _nextReport = reportInterval;
@@ -104,16 +100,13 @@ class SimTitrator {
   var _target = 7.0;
   var _nextDose = Duration.zero;
 
-  // Calibrating: accepted points, the point being sampled, and the buffer
-  // the electrode is in (null: in the sample).
-  var _calPoints = 0;
-  ({double ph, Duration due})? _sampling;
-  double? _bufferPh;
-
   DeviceMode get mode => _mode;
 
   /// True pH of the sample (the probe reading follows it with a lag).
   double get samplePh => _beaker.ph;
+
+  /// Electrode voltage in mV, without noise.
+  double get electrodeMv => electrodeOffset + electrodeSlope * (_probe - 7);
 
   double syringeMl(Channel channel) => _syringeMl[channel.index];
 
@@ -174,42 +167,20 @@ class SimTitrator {
         _target = _ph(args['target']);
         _nextDose = _now;
         _setMode(DeviceMode.titrating);
-      case 'stop' || 'cal_abort':
+      case 'stop':
         _idle();
       case 'move':
         _drive(_channel(args['ch']), _direction(args['dir']), jog: false);
       case 'jog':
         _drive(_channel(args['ch']), _direction(args['dir']), jog: true);
-      case 'cal_start':
-        _calPoints = 0;
-        _sampling = null;
-        _bufferPh = null;
-        _setMode(DeviceMode.calibrating);
-      case 'cal_point':
-        final ph = _ph(args['ph']);
-        if (!_canCalibrate) return _error('busy');
-        _bufferPh = ph;
-        _sampling = (ph: ph, due: _now + calSampling);
-      case 'cal_finish':
-        if (!_canCalibrate) return _error('busy');
-        _emit(
-          _calPoints > 0
-              ? {
-                  'evt': 'cal_done',
-                  'ok': true,
-                  'slope': _round(98 + _random.nextDouble() * 3, 1),
-                  'offset': _round(_random.nextDouble() * 10 - 5, 1),
-                }
-              : {'evt': 'cal_done', 'ok': false},
-        );
-        _idle();
+      case 'cal_set':
+        final slope = _number(args['slope'], -70, -40);
+        final offset = _number(args['offset'], -100, 100);
+        _calSlope = slope;
+        _calOffset = offset;
+        _emit({'evt': 'cal', 'slope': slope, 'offset': offset});
     }
   }
-
-  /// Calibration points and finish need a started calibration that is not
-  /// busy sampling (the protocol leaves this open).
-  bool get _canCalibrate =>
-      _mode == DeviceMode.calibrating && _sampling == null;
 
   /// Starts or extends a motion of one syringe.
   void _drive(Channel channel, Direction direction, {required bool jog}) {
@@ -217,7 +188,7 @@ class SimTitrator {
     final atLimit = direction == Direction.dispense
         ? _syringeMl[i] <= 0
         : _syringeMl[i] >= capacityMl;
-    if (atLimit) return _fail('limit');
+    if (atLimit) return _fail('limit', channel: channel, direction: direction);
 
     final motion = (channel: channel, direction: direction);
     // Taps add up: each `move` is exactly one step.
@@ -235,14 +206,14 @@ class SimTitrator {
     _now += dt;
     _runMotion(from);
     _runTitration();
-    _runSampling();
 
     final seconds = dt.inMicroseconds / 1e6;
-    final source = _bufferPh ?? _beaker.ph;
+    final source = bufferPh ?? _beaker.ph;
     _probe += (source - _probe) * (1 - exp(-seconds / _probeTau));
     if (_now >= _nextReport) {
       _nextReport += reportInterval;
-      _emit({'evt': 'ph', 'v': _round(_probe + _noise(), 3)});
+      final mv = _round(electrodeMv + _noise(), 1);
+      _emit({'evt': 'ph', 'v': _round(_phOf(mv), 2), 'mv': mv});
     }
   }
 
@@ -266,42 +237,33 @@ class SimTitrator {
     }
 
     if (moved < ml) {
-      _fail('limit');
+      _fail('limit', channel: motion.channel, direction: motion.direction);
     } else if (_now >= _motionEnd) {
       _idle();
     }
   }
 
-  /// One control step: dose towards the target, then wait for mixing.
+  /// One control step: dose towards the target, then wait for mixing. Like
+  /// the firmware it acts on its own calibrated reading, not on the true pH.
   void _runTitration() {
     if (_mode != DeviceMode.titrating || _now < _nextDose) return;
-    final err = _target - _probe;
+    final err = _target - _phOf(electrodeMv);
     if (err.abs() <= tolerance) return;
 
     final channel = err > 0 ? Channel.ch2 : Channel.ch1; // base : acid
     final ml = (doseMlPerPh * err.abs()).clamp(minDoseMl, maxDoseMl);
-    if (_syringeMl[channel.index] < ml) return _fail('limit');
+    if (_syringeMl[channel.index] < ml) {
+      return _fail('limit', channel: channel, direction: Direction.dispense);
+    }
     _syringeMl[channel.index] -= ml;
     _beaker.dose(ml, _reagentMolar[channel.index]);
     _nextDose = _now + mixDelay;
   }
 
-  void _runSampling() {
-    final point = _sampling;
-    if (point == null || _now < point.due) return;
-    _sampling = null;
-    final ok = !rejectNextPoint;
-    rejectNextPoint = false;
-    if (ok) _calPoints++;
-    _emit({
-      'evt': 'cal_point',
-      'ph': point.ph,
-      'ok': ok,
-      'mv': _round((7 - point.ph) * 59.16, 1),
-    });
-  }
+  /// The device's pH for electrode voltage [mv]: protocol section 2.4.
+  double _phOf(double mv) => 7 + (mv - _calOffset) / _calSlope;
 
-  /// Gaussian noise (Box-Muller).
+  /// Gaussian electrode noise in mV (Box-Muller).
   double _noise() =>
       _noiseSd *
       sqrt(-2 * log(1 - _random.nextDouble())) *
@@ -318,20 +280,23 @@ class SimTitrator {
   /// Stops everything and returns to idle.
   void _idle() {
     _motion = null;
-    _sampling = null;
-    _bufferPh = null;
     _setMode(DeviceMode.idle);
   }
 
   /// The device stops by itself: error first, then `state: idle`.
-  void _fail(String code) {
-    _error(code);
+  void _fail(String code, {Channel? channel, Direction? direction}) {
+    _error(code, channel: channel, direction: direction);
     _idle();
   }
 
   void _emitState() => _emit({'evt': 'state', 's': _mode.name});
 
-  void _error(String code) => _emit({'evt': 'error', 'code': code});
+  void _error(String code, {Channel? channel, Direction? direction}) => _emit({
+    'evt': 'error',
+    'code': code,
+    'ch': ?channel?.id,
+    'dir': ?direction?.wire,
+  });
 
   void _emit(Map<String, Object> event) =>
       onNotify(utf8.encode(jsonEncode(event)));
@@ -339,19 +304,18 @@ class SimTitrator {
 
 // ------------------------------------------------------- argument parsing
 
-Channel _channel(Object? v) => Channel.values.firstWhere(
-  (c) => c.id == v,
-  orElse: () => throw const FormatException('ch'),
-);
+Channel _channel(Object? v) =>
+    Channel.parse(v) ?? (throw const FormatException('ch'));
 
-Direction _direction(Object? v) => Direction.values.firstWhere(
-  (d) => d.wire == v,
-  orElse: () => throw const FormatException('dir'),
-);
+Direction _direction(Object? v) =>
+    Direction.parse(v) ?? (throw const FormatException('dir'));
 
-double _ph(Object? v) => v is num && v >= 0 && v <= 14
+double _number(Object? v, double min, double max) =>
+    v is num && v >= min && v <= max
     ? v.toDouble()
-    : throw const FormatException('pH out of range');
+    : throw const FormatException('number out of range');
+
+double _ph(Object? v) => _number(v, 0, 14);
 
 double _round(double v, int decimals) {
   final f = pow(10, decimals);

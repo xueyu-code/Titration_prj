@@ -10,16 +10,17 @@ BLE as specified in [`docs/protocol.md`](../docs/protocol.md).
 - Automatic titration to a target pH (0–14, 2 decimals); the app detects
   completion (pH within ±0.05 for 5 s), stops the device and notifies the user
 - Aspirate / dispense for both syringe channels: tap for one step, hold for
-  continuous motion
+  continuous motion; available at any time, a running titration is ended by it
 - Guided multi-point pH calibration (6.86 / 4.00 / 9.18 or 7.00 / 4.01 / 10.01,
-  at least 2 points)
+  at least 2 points): the app records the electrode voltage in each buffer,
+  computes slope and offset and writes them to the device
 - Chinese / English UI, switchable in the app
 
 ## Layout
 
 ```
 lib/
-  core/    pure Dart: protocol codec, completion detector, models
+  core/    pure Dart: protocol codec, completion detector, calibration, models
   data/    platform adapters: BLE link, notifications
   state/   Riverpod controllers (scan, device session, calibration, locale)
   ui/      pages and widgets
@@ -60,13 +61,16 @@ flutter run -t lib/main_sim.dart                   # development, hot reload
 ```
 
 - `SimTitrator` models the firmware and the beaker (buffered acid-base
-  chemistry, probe lag and noise, 10 mL syringes with 0.1 M acid / base) and
-  speaks the wire protocol of `docs/protocol.md`, including the busy rules, the
-  jog timeout and the error codes. It is plain Dart driven by `tick()`, so the
-  tests run it in simulated time.
+  chemistry, probe lag, 10 mL syringes with 0.1 M acid / base, starting at
+  8 mL) and speaks the wire protocol of `docs/protocol.md`, including the busy
+  rules, the jog timeout, the stored calibration and the error codes. Its
+  electrode is not ideal (slope -57.4 mV/pH, offset +6.5 mV) and noisy, so the
+  readings are slightly off until the app calibrates it. It is plain Dart
+  driven by `tick()`, so the tests run it in simulated time.
 - Scanning finds one device, `Titrator-SIM`.
 - The floating **SIM** chip (bottom left) opens a panel with a live readout
-  (true pH, syringe volumes, mode) and fault injection: drop the connection,
-  limit error, electrode error, fail the next calibration point, new sample.
+  (true pH, syringe volumes, electrode mV, mode), the electrode position (in
+  the sample or in one of the standard buffers, to calibrate with) and fault
+  injection: drop the connection, limit error, electrode error, new sample.
 - The build has the same application id as the real app, so it installs over
   it.

@@ -7,6 +7,7 @@ import 'package:titrator_app/data/device_link.dart';
 import 'package:titrator_app/state/device_controller.dart';
 import 'package:titrator_app/state/providers.dart';
 import 'package:titrator_app/ui/home_page.dart';
+import 'package:titrator_app/ui/widgets/jog_button.dart';
 
 import 'harness.dart';
 
@@ -14,7 +15,10 @@ void main() {
   late FakeDeviceController device;
   late StreamController<DeviceEvent> events;
 
-  Future<void> pumpHome(WidgetTester tester) async {
+  Future<void> pumpHome(
+    WidgetTester tester, {
+    Locale locale = const Locale('en'),
+  }) async {
     // Tall surface so the lazily built list shows every card.
     tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1;
@@ -22,6 +26,7 @@ void main() {
     await tester.pumpWidget(
       testApp(
         const HomePage(),
+        locale: locale,
         overrides: [
           deviceProvider.overrideWith(() => device),
           deviceEventsProvider.overrideWith((ref) => events.stream),
@@ -108,5 +113,98 @@ void main() {
       find.text('Device is busy, stop the current operation first'),
       findsOneWidget,
     );
+  });
+
+  group('syringe buttons', () {
+    List<JogButton> buttons(WidgetTester tester) =>
+        tester.widgetList<JogButton>(find.byType(JogButton)).toList();
+
+    for (final mode in DeviceMode.values) {
+      testWidgets('are enabled while connected, mode ${mode.name}', (
+        tester,
+      ) async {
+        device = FakeDeviceController(
+          DeviceState(link: LinkStatus.connected, mode: mode, ph: 7),
+        );
+        await pumpHome(tester);
+
+        expect(buttons(tester), hasLength(4));
+        expect(buttons(tester).every((b) => b.enabled), isTrue);
+      });
+    }
+
+    testWidgets('are disabled without a connection', (tester) async {
+      device = FakeDeviceController(const DeviceState());
+      await pumpHome(tester);
+
+      expect(buttons(tester).any((b) => b.enabled), isFalse);
+    });
+
+    testWidgets('move the syringe during a titration', (tester) async {
+      device = FakeDeviceController(
+        const DeviceState(
+          link: LinkStatus.connected,
+          mode: DeviceMode.titrating,
+          ph: 6.5,
+          target: 7,
+        ),
+      );
+      await pumpHome(tester);
+
+      await tester.tap(find.text('Aspirate').first);
+      await tester.pump();
+      final move = device.sent.single as Move;
+      expect(move.channel, Channel.ch1);
+      expect(move.direction, Direction.aspirate);
+    });
+  });
+
+  group('limit error', () {
+    final cases = <(String, DeviceError, String, String)>[
+      (
+        'a full syringe',
+        const DeviceError(
+          'limit',
+          channel: Channel.ch1,
+          direction: Direction.aspirate,
+        ),
+        'Channel 1 syringe is full',
+        '通道 1 注射器已吸满',
+      ),
+      (
+        'an empty syringe',
+        const DeviceError(
+          'limit',
+          channel: Channel.ch2,
+          direction: Direction.dispense,
+        ),
+        'Channel 2 syringe is empty',
+        '通道 2 注射器已排空',
+      ),
+      (
+        'an unspecific limit',
+        const DeviceError('limit'),
+        'Syringe reached its travel limit',
+        '注射器已到达行程极限',
+      ),
+    ];
+
+    for (final (name, error, en, zh) in cases) {
+      for (final (locale, text) in [
+        (const Locale('en'), en),
+        (const Locale('zh'), zh),
+      ]) {
+        testWidgets('names $name in ${locale.languageCode}', (tester) async {
+          await pumpHome(tester, locale: locale);
+
+          events.add(error);
+          await tester.pump(); // deliver the event
+          await tester.pump(
+            const Duration(milliseconds: 100),
+          ); // show the snack bar
+          expect(find.text(text), findsOneWidget);
+        });
+      }
+    }
   });
 }

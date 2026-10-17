@@ -46,7 +46,6 @@
   "modeIdle": "Idle",
   "modeTitrating": "Titrating",
   "modeMoving": "Motor running",
-  "modeCalibrating": "Calibrating",
   "modeUnknown": "Unknown",
   "targetPhValue": "Target pH {target}",
   "@targetPhValue": {
@@ -67,6 +66,18 @@
   "calibrate": "pH calibration",
   "errorBusy": "Device is busy, stop the current operation first",
   "errorLimit": "Syringe reached its travel limit",
+  "errorSyringeFull": "Channel {channel} syringe is full",
+  "@errorSyringeFull": {
+    "placeholders": {
+      "channel": {"type": "int"}
+    }
+  },
+  "errorSyringeEmpty": "Channel {channel} syringe is empty",
+  "@errorSyringeEmpty": {
+    "placeholders": {
+      "channel": {"type": "int"}
+    }
+  },
   "errorSensor": "pH electrode error",
   "errorBadCmd": "Device rejected the command",
   "errorGeneric": "Device error: {code} {message}",
@@ -86,16 +97,32 @@
       "buffer": {"type": "String"}
     }
   },
-  "calInstructions": "1. Rinse the electrode with distilled water and blot dry.\n2. Put it into the pH {buffer} buffer.\n3. Wait until the reading is stable, then tap Sample.",
+  "calInstructions": "1. Rinse the electrode with distilled water and blot dry.\n2. Put it into the pH {buffer} buffer.\n3. Tap Record. The app waits until the reading is stable by itself.",
   "@calInstructions": {
     "placeholders": {
       "buffer": {"type": "String"}
     }
   },
-  "calSample": "Sample",
-  "calSampling": "Sampling, keep the electrode still…",
-  "calPointRejected": "Reading not stable or out of range, try again",
+  "calElectrode": "Electrode potential",
+  "calMv": "{value} mV",
+  "@calMv": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "calRecord": "Record",
+  "calSampling": "Waiting for a stable reading, keep the electrode still…",
+  "calUnstable": "The reading did not become stable, check the electrode and try again",
+  "calOutOfRange": "The electrode is outside the acceptable range (slope {minEfficiency}–{maxEfficiency} % of ideal, offset within ±{maxOffset} mV). Check the electrode and the buffers.",
+  "@calOutOfRange": {
+    "placeholders": {
+      "minEfficiency": {"type": "int"},
+      "maxEfficiency": {"type": "int"},
+      "maxOffset": {"type": "int"}
+    }
+  },
   "calTimeout": "Device did not respond, try again",
+  "calRejected": "Device rejected the parameters, try again",
   "calLink": "Connection problem",
   "calAllRecorded": "All points recorded",
   "calFinish": "Finish calibration",
@@ -105,13 +132,14 @@
       "count": {"type": "int"}
     }
   },
-  "calFinishing": "Computing calibration…",
+  "calApplying": "Writing to the device…",
   "calSuccess": "Calibration successful",
-  "calFailed": "Calibration failed",
-  "calSlope": "Slope: {value} %",
+  "calApplied": "The parameters were written to the device.",
+  "calSlope": "Slope: {value} mV/pH ({efficiency} %)",
   "@calSlope": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {"type": "String"},
+      "efficiency": {"type": "String"}
     }
   },
   "calOffset": "Offset: {value} mV",

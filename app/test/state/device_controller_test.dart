@@ -257,6 +257,35 @@ void main() {
       expect(state().target, isNull);
     });
 
+    for (final command in const <Command>[
+      Jog(Channel.ch1, Direction.dispense),
+      Move(Channel.ch2, Direction.aspirate),
+    ]) {
+      test(
+        '${command.toJson()['cmd']} ends the titration in the app',
+        () async {
+          await titrating();
+          await reading(7.0, 0);
+          await reading(7.0, 4);
+
+          await controller().send(command);
+          expect(state().target, isNull);
+          expect(link.sent.last, command.toJson());
+
+          // The device has not reported `moving` yet; readings in the band
+          // must not stop the user's motion.
+          await reading(7.0, 6);
+          await reading(7.0, 12);
+          expect(link.sent.where((c) => c['cmd'] == 'stop'), isEmpty);
+          expect(notifier.shown, isEmpty);
+          expect(state().completion, isNull);
+
+          await mode(DeviceMode.moving);
+          expect(state().mode, DeviceMode.moving);
+        },
+      );
+    }
+
     test('completion survives a failing stop write', () async {
       await titrating();
       link.sendError = const LinkException(LinkFailure.failed);
@@ -271,5 +300,14 @@ void main() {
     await controller().connect('AA:BB', 'Titrator-1');
     await controller().send(const Jog(Channel.ch1, Direction.dispense));
     expect(link.sent.single, {'cmd': 'jog', 'ch': 1, 'dir': 'out'});
+  });
+
+  test('moving without a titration leaves the state alone', () async {
+    await controller().connect('AA:BB', 'Titrator-1');
+    var changes = 0;
+    container.listen(deviceProvider, (_, _) => changes++);
+    await controller().send(const Jog(Channel.ch1, Direction.dispense));
+    await controller().send(const Move(Channel.ch1, Direction.aspirate));
+    expect(changes, 0, reason: 'a held jog sends every 300 ms');
   });
 }
