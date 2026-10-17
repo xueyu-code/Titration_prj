@@ -541,3 +541,34 @@ cd ~/projects/titrator && git init
 ### A.3 验证环境和你的网络可能不同
 
 我的验证环境里 `github.com` 连不上，Gradle 也不走系统代理，所以文中几处镜像用法是照着“GitHub 不通”验证的：Gradle 用腾讯云镜像、ESP-IDF 工具用 `IDF_GITHUB_ASSETS`、ESP-IDF 源码用极狐镜像。如果你那里 GitHub 直连快，这些镜像都不是必须的；但 4.4 的改动 2 和 3（SDK 37）与网络无关，一定要做。
+
+
+
+```sh
+1. 手机上开启 USB 调试
+
+1. 设置 → 关于手机，连点“版本号”7 次，打开开发者选项。
+2. 开发者选项里打开 USB 调试。部分小米、OPPO、vivo 手机还要打开“USB 安装”。
+3. USB 连接模式选“文件传输”，不要选“仅充电”。
+
+2. 把手机连到虚拟机
+
+VMware 菜单：虚拟机 → 可移动设备 → 找到你的手机 → 连接（断开与主机的连接）。也可以在 VMware 底部状态栏的 USB 图标上右键，选“连接”。
+
+3. 确认 adb 能看到手机
+
+adb devices -l
+- 手机上会弹“允许 USB 调试吗？”，点允许（建议勾选“始终允许”）。
+- 状态是 device 就是正常。
+- 状态是 unauthorized：去手机上点允许。
+- 状态是 no permissions：手机厂商不在 udev 规则里。先用 lsusb 找到手机那一行，记下 ID 后冒号前的 4 位，再执行下面的命令（XXXX 换成这 4 位），然后拔插一次手机：
+echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="XXXX", MODE="0666", GROUP="plugdev"' | sudo tee -a /etc/udev/rules.d/51-android.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+
+4. 安装并运行 App
+
+cd ~/work_space/Titration_prj/app
+flutter run -d <设备id>        # 调试运行，支持热重载（r）
+# 或者直接装已编好的包：
+adb install -r build/app/outputs/flutter-apk/app-release.apk
+```
