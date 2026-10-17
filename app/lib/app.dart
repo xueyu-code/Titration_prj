@@ -1,12 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'data/app_notifier.dart';
 import 'l10n/app_localizations.dart';
 import 'state/locale_controller.dart';
+import 'state/providers.dart';
 import 'ui/scan_page.dart';
 
+/// Initializes the app and runs it. [overrides] replace providers and
+/// [builder] wraps the navigator; both are for the simulator entry point.
+Future<void> runTitratorApp({
+  List<Override> overrides = const [],
+  TransitionBuilder? builder,
+}) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final notifier = AppNotifier();
+  await notifier.init();
+  runApp(
+    ProviderScope(
+      overrides: [
+        prefsProvider.overrideWithValue(prefs),
+        appNotifierProvider.overrideWithValue(notifier),
+        ...overrides,
+      ],
+      child: TitratorApp(builder: builder),
+    ),
+  );
+}
+
 class TitratorApp extends ConsumerWidget {
-  const TitratorApp({super.key});
+  const TitratorApp({super.key, this.builder});
+
+  final TransitionBuilder? builder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -18,6 +46,7 @@ class TitratorApp extends ConsumerWidget {
       locale: ref.watch(localeProvider),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
+      builder: builder,
       home: const ScanPage(),
     );
   }

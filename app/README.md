@@ -25,6 +25,7 @@ lib/
   state/   Riverpod controllers (scan, device session, calibration, locale)
   ui/      pages and widgets
   l10n/    ARB translations (Dart files are generated)
+  sim/     hardware-free simulator, reached only from main_sim.dart
 ```
 
 Dependencies point downwards only: `ui → state → data → core`.
@@ -42,3 +43,28 @@ flutter build apk --release
 
 `compileSdk` is 37 because `permission_handler_android` and
 `reactive_ble_mobile` require it.
+
+## Simulator
+
+`lib/main_sim.dart` runs the whole app against a simulated titrator, so
+everything can be tried on a phone without the board. `lib/main.dart` never
+imports `lib/sim/`, so release builds contain none of it.
+
+```bash
+flutter run -t lib/main_sim.dart
+flutter build apk --debug -t lib/main_sim.dart
+```
+
+- `SimTitrator` models the firmware and the beaker (buffered acid-base
+  chemistry, probe lag and noise, 10 mL syringes with 0.1 M acid / base) and
+  speaks the wire protocol of `docs/protocol.md`, including the busy rules, the
+  jog timeout and the error codes. It is plain Dart driven by `tick()`, so the
+  tests run it in simulated time.
+- Scanning finds one device, `Titrator-SIM`.
+- The floating **SIM** chip (bottom left) opens a panel with a live readout
+  (true pH, syringe volumes, mode) and fault injection: drop the connection,
+  limit error, electrode error, fail the next calibration point, new sample.
+- The build has the same application id as the real app, so it installs over
+  it. Its readings go to their own database (`samples_sim.db`, next to the real
+  `samples.db`), and an empty history is seeded with 24 hours of readings on
+  first start.

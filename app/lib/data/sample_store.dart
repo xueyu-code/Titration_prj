@@ -54,6 +54,13 @@ class SampleStore {
     }
   }
 
+  /// Buffers [samples] and writes them in one transaction, e.g. to seed
+  /// history.
+  Future<void> addAll(Iterable<PhSample> samples) {
+    _buffer.addAll(samples);
+    return flush();
+  }
+
   /// Writes buffered samples now. A failed write drops that batch.
   Future<void> flush() {
     _timer?.cancel();

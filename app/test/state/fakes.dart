@@ -59,6 +59,10 @@ class FakeSampleStore implements SampleStore {
   void add(PhSample sample) => added.add(sample);
 
   @override
+  Future<void> addAll(Iterable<PhSample> samples) async =>
+      added.addAll(samples);
+
+  @override
   Future<void> flush() async => flushes++;
 
   @override
