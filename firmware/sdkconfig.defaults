@@ -1,0 +1,39 @@
+# Titrator firmware defaults. sdkconfig is generated from this file; change
+# settings here (or with menuconfig + `idf.py save-defconfig`), not in sdkconfig.
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# ESP32-S3-WROOM-2-N32R16V: 32 MB octal flash and 16 MB octal PSRAM, both
+# 1.8 V (VDD_SPI is fixed by eFuse on this module). 80 MHz for both: flash
+# DTR + PSRAM DTR at 80 MHz is a supported pair; 120 MHz is experimental.
+CONFIG_ESPTOOLPY_OCT_FLASH=y
+CONFIG_ESPTOOLPY_FLASHMODE_OPI=y
+CONFIG_ESPTOOLPY_FLASH_SAMPLE_MODE_DTR=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# One factory app (1.5 MB) + NVS. No OTA.
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# BLE peripheral on NimBLE: GATT server only, one connection, MTU 247.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
+CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
+
+# The per-step MCPWM interrupt and what it calls stay in IRAM.
+CONFIG_MCPWM_ISR_HANDLER_IN_IRAM=y
+CONFIG_MCPWM_CTRL_FUNC_IN_IRAM=y
+CONFIG_PCNT_CTRL_FUNC_IN_IRAM=y
+
+# Logging: INFO by default, DEBUG can be enabled per tag at runtime.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y

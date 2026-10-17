@@ -1,0 +1,5 @@
+# axis_next() runs in the MCPWM timer ISR at every step: keep it out of flash.
+[mapping:core]
+archive: libcore.a
+entries:
+    axis (noflash)
