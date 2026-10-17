@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:titrator_app/core/protocol.dart';
 import 'package:titrator_app/data/app_notifier.dart';
 import 'package:titrator_app/data/device_link.dart';
+import 'package:titrator_app/data/foreground_service.dart';
 
 /// Lets queued stream events and microtasks run.
 Future<void> settle() => Future<void>.delayed(Duration.zero);
@@ -62,4 +63,25 @@ class FakeAppNotifier implements AppNotifier {
   @override
   Future<void> show(String title, String body) async =>
       shown.add((title, body));
+}
+
+class FakeForegroundService implements ForegroundService {
+  /// (title, text) of the running service; null while stopped.
+  (String, String)? running;
+
+  /// Number of start / stop calls.
+  int starts = 0;
+  int stops = 0;
+
+  @override
+  Future<void> start(String title, String text) async {
+    starts++;
+    running = (title, text);
+  }
+
+  @override
+  Future<void> stop() async {
+    stops++;
+    running = null;
+  }
 }

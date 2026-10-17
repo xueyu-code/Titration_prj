@@ -116,6 +116,14 @@ void main() {
       expect(decode('{"evt":"cal","slope":"-57.9","offset":4}'), isNull);
     });
 
+    test('cal knows the factory defaults', () {
+      expect(const CalApplied(-59.16, 0).isFactory, isTrue);
+      expect(const CalApplied(-59.159999, 0.001).isFactory, isTrue);
+      expect(const CalApplied(-57.92, 0).isFactory, isFalse);
+      expect(const CalApplied(-59.16, 4.35).isFactory, isFalse);
+      expect(const CalApplied(-57.4, 0).efficiency, closeTo(0.970, 0.001));
+    });
+
     test('error', () {
       expect(
         decode('{"evt":"error","code":"busy","msg":"titrating"}'),

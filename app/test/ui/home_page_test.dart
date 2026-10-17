@@ -159,7 +159,7 @@ void main() {
     });
   });
 
-  group('limit error', () {
+  group('device error', () {
     final cases = <(String, DeviceError, String, String)>[
       (
         'a full syringe',
@@ -187,6 +187,36 @@ void main() {
         'Syringe reached its travel limit',
         '注射器已到达行程极限',
       ),
+      (
+        'an unhomed syringe',
+        const DeviceError(
+          'unhomed',
+          channel: Channel.ch2,
+          direction: Direction.aspirate,
+        ),
+        'Channel 2 position unknown: dispense to the end once, then aspirate',
+        '通道 2 位置未知：请先排液到底一次，再吸取',
+      ),
+      (
+        'an electrode fault',
+        const DeviceError('sensor'),
+        'pH electrode error: check that it is immersed in the solution and '
+            'properly connected',
+        'pH 电极异常，请检查电极是否浸入溶液、连接是否正常',
+      ),
+      (
+        'a titration that does not converge',
+        const DeviceError('no_converge'),
+        'Titration did not converge: pH changes too steeply near the target '
+            '(the sample may lack buffering), so it was stopped automatically',
+        '滴定未收敛：目标附近 pH 变化太陡（样品可能缺少缓冲），已自动停止',
+      ),
+      (
+        'an unknown error',
+        const DeviceError('weird', message: 'oops'),
+        'Device error: weird oops',
+        '设备错误：weird oops',
+      ),
     ];
 
     for (final (name, error, en, zh) in cases) {
@@ -206,5 +236,95 @@ void main() {
         });
       }
     }
+  });
+
+  group('pH card', () {
+    Future<void> pumpWith(
+      WidgetTester tester,
+      CalApplied? calibration, {
+      Locale locale = const Locale('en'),
+    }) async {
+      device = FakeDeviceController(
+        DeviceState(
+          link: LinkStatus.connected,
+          mode: DeviceMode.idle,
+          ph: 7,
+          calibration: calibration,
+        ),
+      );
+      await pumpHome(tester, locale: locale);
+    }
+
+    testWidgets('shows no calibration until the device reports it', (
+      tester,
+    ) async {
+      await pumpWith(tester, null);
+      expect(find.textContaining('Slope'), findsNothing);
+      expect(find.textContaining('factory'), findsNothing);
+    });
+
+    testWidgets('says the electrode is not calibrated at factory values', (
+      tester,
+    ) async {
+      await pumpWith(tester, const CalApplied(-59.16, 0));
+      expect(find.text('Not calibrated (factory defaults)'), findsOneWidget);
+    });
+
+    testWidgets('shows slope efficiency and signed offset', (tester) async {
+      await pumpWith(tester, const CalApplied(-57.4, 4.3));
+      expect(find.text('Slope 97.0 % · Offset +4.3 mV'), findsOneWidget);
+    });
+
+    testWidgets('shows a negative offset', (tester) async {
+      await pumpWith(tester, const CalApplied(-59.16, -6.5));
+      expect(find.text('Slope 100.0 % · Offset -6.5 mV'), findsOneWidget);
+    });
+
+    testWidgets('is localized', (tester) async {
+      await pumpWith(
+        tester,
+        const CalApplied(-57.4, 4.3),
+        locale: const Locale('zh'),
+      );
+      expect(find.text('斜率 97.0 % · 零点 +4.3 mV'), findsOneWidget);
+    });
+
+    testWidgets('names the factory defaults in Chinese', (tester) async {
+      await pumpWith(
+        tester,
+        const CalApplied(-59.16, 0),
+        locale: const Locale('zh'),
+      );
+      expect(find.text('未标定（出厂参数）'), findsOneWidget);
+    });
+  });
+
+  group('texts', () {
+    testWidgets('the chart is not limited to 5 minutes', (tester) async {
+      await pumpHome(tester);
+      expect(find.text('Live curve'), findsOneWidget);
+      expect(find.textContaining('5 min'), findsNothing);
+    });
+
+    testWidgets('the syringe hint reminds to put the tube in the bottle', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+      expect(
+        find.text(
+          'Tap for one step, hold for continuous motion. '
+          'Put the tube into the reagent bottle before aspirating.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the chart title and syringe hint are localized', (
+      tester,
+    ) async {
+      await pumpHome(tester, locale: const Locale('zh'));
+      expect(find.text('实时曲线'), findsOneWidget);
+      expect(find.text('轻点单步，长按持续运动。吸取前请把管口放入试剂瓶。'), findsOneWidget);
+    });
   });
 }

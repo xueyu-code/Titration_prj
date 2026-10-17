@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/protocol.dart';
 import '../data/app_notifier.dart';
 import '../data/device_link.dart';
+import '../data/foreground_service.dart';
 
 /// Overridden in main() with the instance loaded before runApp.
 final prefsProvider = Provider<SharedPreferences>(
@@ -14,6 +15,11 @@ final prefsProvider = Provider<SharedPreferences>(
 /// Overridden in main() with the initialized instance.
 final appNotifierProvider = Provider<AppNotifier>(
   (ref) => throw UnimplementedError('appNotifierProvider must be overridden'),
+);
+
+/// Keeps the app running while a titration is in progress.
+final foregroundServiceProvider = Provider<ForegroundService>(
+  (ref) => ForegroundService(),
 );
 
 /// Wall clock; tests override it to drive time-based logic.

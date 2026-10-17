@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'calibration.dart';
+
 /// BLE contract with the titrator firmware. Keep in sync with docs/protocol.md.
 abstract final class TitratorUuids {
   static const service = 'f65c0001-8221-4068-aa47-28e41eec47fd';
@@ -160,11 +162,20 @@ final class ModeChanged extends DeviceEvent {
   final DeviceMode mode;
 }
 
-/// The calibration the device stored, in answer to [CalSet].
+/// The calibration the device stored: reported after subscribing and in
+/// answer to [CalSet].
 final class CalApplied extends DeviceEvent {
   const CalApplied(this.slope, this.offset);
   final double slope;
   final double offset;
+
+  /// Slope relative to the ideal one, 1.0 being perfect.
+  double get efficiency => slope / idealSlope;
+
+  /// Still the device's factory defaults (an ideal electrode), i.e. never
+  /// calibrated. Parameters have two decimals on the wire.
+  bool get isFactory =>
+      (slope - idealSlope).abs() < 0.005 && offset.abs() < 0.005;
 }
 
 final class DeviceError extends DeviceEvent {

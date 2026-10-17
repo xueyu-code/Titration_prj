@@ -30,6 +30,9 @@ class DeviceLink {
   static const _setupTimeout = Duration(seconds: 15);
   static const _mtu = 247;
 
+  /// Messages are at most 100 B (protocol §1) plus the 3 B ATT header.
+  static const _minMtu = 103;
+
   final _statusController = StreamController<LinkStatus>.broadcast();
   final _eventController = StreamController<DeviceEvent>.broadcast();
 
@@ -48,7 +51,8 @@ class DeviceLink {
   /// Decoded EVT notifications of the current connection (broadcast).
   Stream<DeviceEvent> get events => _eventController.stream;
 
-  /// Connects, requests MTU 247, verifies the titrator service exists and
+  /// Connects, requests MTU 247 (a result too small for protocol messages
+  /// fails the connection), verifies the titrator service exists and
   /// subscribes to EVT. Completes when ready; throws [LinkException].
   Future<void> connect(String deviceId) async {
     await disconnect();
@@ -122,11 +126,8 @@ class DeviceLink {
         }, onError: (Object e) => _lost(attempt, e));
     await attempt.future;
 
-    try {
-      await _ble.requestMtu(deviceId: id, mtu: _mtu);
-    } catch (_) {
-      // The default MTU still works for short messages.
-    }
+    final mtu = await _ble.requestMtu(deviceId: id, mtu: _mtu);
+    if (mtu < _minMtu) throw LinkException(LinkFailure.failed, 'MTU $mtu');
     await _ble.discoverAllServices(id);
     final services = await _ble.getDiscoveredServices(id);
 

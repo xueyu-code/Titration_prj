@@ -6,9 +6,14 @@ BLE as specified in [`docs/protocol.md`](../docs/protocol.md).
 ## Features
 
 - Scan for BLE devices and connect (titrators are listed first)
-- Live pH value and curve (last 5 minutes)
+- Live pH value and curve (the last 5 minutes, or since the latest titration
+  started, up to 60 minutes); shows the calibration stored on the device
 - Automatic titration to a target pH (0–14, 2 decimals); the app detects
   completion (pH within ±0.05 for 5 s), stops the device and notifies the user
+- Keeps running during a titration with the screen off or the app in the
+  background (Android foreground service with an ongoing notification), and
+  notifies when the titration ends abnormally: connection lost or a device
+  error (syringe empty, electrode fault, no convergence)
 - Aspirate / dispense for both syringe channels: tap for one step, hold for
   continuous motion; available at any time, a running titration is ended by it
 - Guided multi-point pH calibration (6.86 / 4.00 / 9.18 or 7.00 / 4.01 / 10.01,
@@ -21,7 +26,7 @@ BLE as specified in [`docs/protocol.md`](../docs/protocol.md).
 ```
 lib/
   core/    pure Dart: protocol codec, completion detector, calibration, models
-  data/    platform adapters: BLE link, notifications
+  data/    platform adapters: BLE link, notifications, foreground service
   state/   Riverpod controllers (scan, device session, calibration, locale)
   ui/      pages and widgets
   l10n/    ARB translations (Dart files are generated)

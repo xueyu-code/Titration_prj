@@ -9,6 +9,8 @@
       "ph": {"type": "String"}
     }
   },
+  "titrationAbortedTitle": "Titration interrupted",
+  "titrationLinkLost": "The connection to the device was lost and the device has stopped.",
 
   "ok": "OK",
   "cancel": "Cancel",
@@ -53,7 +55,7 @@
       "target": {"type": "String"}
     }
   },
-  "liveCurveTitle": "Live curve (last 5 min)",
+  "liveCurveTitle": "Live curve",
   "targetPh": "Target pH",
   "targetPhInvalid": "Enter a pH between 0 and 14",
   "startTitration": "Start titration",
@@ -62,8 +64,16 @@
   "channelBase": "Channel 2 (base)",
   "aspirate": "Aspirate",
   "dispense": "Dispense",
-  "jogHint": "Tap for one step, hold for continuous motion",
+  "jogHint": "Tap for one step, hold for continuous motion. Put the tube into the reagent bottle before aspirating.",
   "calibrate": "pH calibration",
+  "calSummary": "Slope {efficiency} % · Offset {offset} mV",
+  "@calSummary": {
+    "placeholders": {
+      "efficiency": {"type": "String"},
+      "offset": {"type": "String"}
+    }
+  },
+  "calFactory": "Not calibrated (factory defaults)",
   "errorBusy": "Device is busy, stop the current operation first",
   "errorLimit": "Syringe reached its travel limit",
   "errorSyringeFull": "Channel {channel} syringe is full",
@@ -78,7 +88,14 @@
       "channel": {"type": "int"}
     }
   },
-  "errorSensor": "pH electrode error",
+  "errorUnhomed": "Channel {channel} position unknown: dispense to the end once, then aspirate",
+  "@errorUnhomed": {
+    "placeholders": {
+      "channel": {"type": "int"}
+    }
+  },
+  "errorSensor": "pH electrode error: check that it is immersed in the solution and properly connected",
+  "errorNoConverge": "Titration did not converge: pH changes too steeply near the target (the sample may lack buffering), so it was stopped automatically",
   "errorBadCmd": "Device rejected the command",
   "errorGeneric": "Device error: {code} {message}",
   "@errorGeneric": {

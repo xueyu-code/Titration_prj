@@ -7,6 +7,8 @@ import '../core/completion_detector.dart';
 import '../core/ph_sample.dart';
 import '../core/protocol.dart';
 import '../data/device_link.dart';
+import '../l10n/app_localizations.dart';
+import 'device_error_text.dart';
 import 'locale_controller.dart';
 import 'providers.dart';
 
@@ -24,6 +26,7 @@ class DeviceState {
     this.recent = const [],
     this.target,
     this.completion,
+    this.calibration,
   });
 
   final LinkStatus link;
@@ -34,7 +37,7 @@ class DeviceState {
   final double? ph;
   final DeviceMode mode;
 
-  /// Readings of the last [DeviceController.liveWindow], oldest first.
+  /// Recent readings, oldest first; see [DeviceController.liveWindow].
   final List<PhSample> recent;
 
   /// Target of the titration started from this app, while it runs.
@@ -42,6 +45,9 @@ class DeviceState {
 
   /// Replaced each time the app detects a finished titration.
   final Completion? completion;
+
+  /// Calibration stored on the device, once it has reported it.
+  final CalApplied? calibration;
 
   bool get connected => link == LinkStatus.connected;
 
@@ -55,6 +61,7 @@ class DeviceState {
     List<PhSample>? recent,
     ValueGetter<double?>? target,
     Completion? completion,
+    CalApplied? calibration,
   }) => DeviceState(
     link: link ?? this.link,
     deviceId: deviceId,
@@ -64,6 +71,7 @@ class DeviceState {
     recent: recent ?? this.recent,
     target: target != null ? target() : this.target,
     completion: completion ?? this.completion,
+    calibration: calibration ?? this.calibration,
   );
 }
 
@@ -74,12 +82,25 @@ final deviceProvider = NotifierProvider<DeviceController, DeviceState>(
 );
 
 class DeviceController extends Notifier<DeviceState> {
+  /// [DeviceState.recent] keeps the last [liveWindow], or everything since the
+  /// latest titration started from this app if that is longer, but never more
+  /// than [maxLiveWindow].
   static const liveWindow = Duration(minutes: 5);
+  static const maxLiveWindow = Duration(minutes: 60);
 
-  /// Present while a titration started from this app runs.
+  /// Errors after which the device has stopped the titration by itself.
+  static const _titrationErrors = {'limit', 'unhomed', 'sensor', 'no_converge'};
+
+  /// Present while a titration started from this app runs; the foreground
+  /// service runs exactly as long.
   CompletionDetector? _detector;
 
+  /// When the latest titration started from this app began.
+  DateTime? _titrationStart;
+
   DeviceLink get _link => ref.read(deviceLinkProvider);
+
+  AppLocalizations get _l10n => l10nFor(ref.read(localeProvider));
 
   @override
   DeviceState build() {
@@ -100,7 +121,8 @@ class DeviceController extends Notifier<DeviceState> {
 
   /// Throws [LinkException] on failure.
   Future<void> connect(String deviceId, String name) async {
-    _detector = null;
+    _forget();
+    _titrationStart = null;
     state = DeviceState(
       link: LinkStatus.connecting,
       deviceId: deviceId,
@@ -120,14 +142,24 @@ class DeviceController extends Notifier<DeviceState> {
 
   /// Disconnects and forgets the device.
   Future<void> disconnect() async {
-    _detector = null;
+    _forget();
     await _link.disconnect();
     state = const DeviceState();
   }
 
   Future<void> startTitration(double target) async {
     _detector = CompletionDetector(target);
+    _titrationStart = ref.read(clockProvider)();
     state = state.copyWith(target: () => target);
+    final l10n = _l10n;
+    unawaited(
+      ref
+          .read(foregroundServiceProvider)
+          .start(
+            l10n.modeTitrating,
+            l10n.targetPhValue(target.toStringAsFixed(2)),
+          ),
+    );
     try {
       await _link.send(StartTitration(target));
     } catch (_) {
@@ -157,12 +189,15 @@ class DeviceController extends Notifier<DeviceState> {
     // Anything but an established connection going away is handled by
     // connect() / disconnect() themselves.
     if (status != LinkStatus.disconnected || !state.connected) return;
-    _detector = null;
+    final interrupted = _detector != null;
+    _forget();
     state = state.copyWith(
       link: LinkStatus.disconnected,
       mode: DeviceMode.unknown,
       target: () => null,
     );
+    // The device stops by itself when the link drops.
+    if (interrupted) _notifyInterrupted((l10n) => l10n.titrationLinkLost);
   }
 
   void _onEvent(DeviceEvent event) {
@@ -173,12 +208,18 @@ class DeviceController extends Notifier<DeviceState> {
         // The device left titrating by itself (limit, error) or on request.
         final stopped =
             state.mode == DeviceMode.titrating && mode != DeviceMode.titrating;
-        if (stopped) _detector = null;
+        if (stopped) _forget();
         state = state.copyWith(mode: mode, target: stopped ? () => null : null);
-      case DeviceError()
-          when state.target != null && state.mode != DeviceMode.titrating:
-        // The device refused to start (e.g. busy).
-        _clearTarget();
+      case final CalApplied calibration:
+        state = state.copyWith(calibration: calibration);
+      case final DeviceError error when _detector != null:
+        if (state.mode != DeviceMode.titrating) {
+          // The device refused to start (e.g. busy).
+          _clearTarget();
+        } else if (_titrationErrors.contains(error.code)) {
+          // The titration ends when the device reports idle next.
+          _notifyInterrupted((l10n) => deviceErrorText(l10n, error));
+        }
       default:
     }
   }
@@ -186,7 +227,7 @@ class DeviceController extends Notifier<DeviceState> {
   void _onReading(double ph) {
     final now = ref.read(clockProvider)();
     final sample = PhSample(now, ph);
-    final cutoff = now.subtract(liveWindow);
+    final cutoff = _liveCutoff(now);
     state = state.copyWith(
       ph: ph,
       recent: [
@@ -202,32 +243,50 @@ class DeviceController extends Notifier<DeviceState> {
     }
   }
 
+  /// Oldest time [DeviceState.recent] keeps at [now].
+  DateTime _liveCutoff(DateTime now) {
+    final window = now.subtract(liveWindow);
+    final start = _titrationStart;
+    final cutoff = start != null && start.isBefore(window) ? start : window;
+    final limit = now.subtract(maxLiveWindow);
+    return cutoff.isBefore(limit) ? limit : cutoff;
+  }
+
   /// Called once per titration: the detector and target are cleared first, so
   /// later readings cannot trigger it again.
   void _complete(double target, double ph, DateTime now) {
-    _detector = null;
+    _forget();
     state = state.copyWith(
       target: () => null,
       completion: (time: now, target: target, ph: ph),
     );
     // Best effort: a lost link already stops the device.
     unawaited(_link.send(const StopAll()).onError((_, _) {}));
-    final l10n = l10nFor(ref.read(localeProvider));
-    unawaited(
-      ref
-          .read(appNotifierProvider)
-          .show(
-            l10n.titrationDoneTitle,
-            l10n.titrationDoneBody(
-              target.toStringAsFixed(2),
-              ph.toStringAsFixed(2),
-            ),
-          ),
+    final l10n = _l10n;
+    _notify(
+      l10n.titrationDoneTitle,
+      l10n.titrationDoneBody(target.toStringAsFixed(2), ph.toStringAsFixed(2)),
     );
   }
 
-  void _clearTarget() {
+  void _notifyInterrupted(String Function(AppLocalizations l10n) body) {
+    final l10n = _l10n;
+    _notify(l10n.titrationAbortedTitle, body(l10n));
+  }
+
+  void _notify(String title, String body) =>
+      unawaited(ref.read(appNotifierProvider).show(title, body));
+
+  /// Forgets the running titration, if any, and stops the foreground service
+  /// that kept the app alive for it.
+  void _forget() {
+    if (_detector == null) return;
     _detector = null;
+    unawaited(ref.read(foregroundServiceProvider).stop());
+  }
+
+  void _clearTarget() {
+    _forget();
     state = state.copyWith(target: () => null);
   }
 }

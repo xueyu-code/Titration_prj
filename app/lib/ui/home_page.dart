@@ -6,6 +6,7 @@ import '../core/protocol.dart';
 import '../data/device_link.dart';
 import '../l10n/app_localizations.dart';
 import '../state/device_controller.dart';
+import '../state/device_error_text.dart';
 import '../state/providers.dart';
 import 'calibration_page.dart';
 import 'format.dart';
@@ -103,22 +104,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _showDeviceError(DeviceError error) {
-    final l10n = AppLocalizations.of(context);
-    showSnack(context, switch (error.code) {
-      'busy' => l10n.errorBusy,
-      'limit' => switch ((error.channel, error.direction)) {
-        (final channel?, Direction.aspirate) => l10n.errorSyringeFull(
-          channel.id,
-        ),
-        (final channel?, Direction.dispense) => l10n.errorSyringeEmpty(
-          channel.id,
-        ),
-        _ => l10n.errorLimit,
-      },
-      'sensor' => l10n.errorSensor,
-      'bad_cmd' => l10n.errorBadCmd,
-      _ => l10n.errorGeneric(error.code, error.message ?? '').trim(),
-    });
+    showSnack(context, deviceErrorText(AppLocalizations.of(context), error));
   }
 
   @override
@@ -294,6 +280,21 @@ class _PhCard extends StatelessWidget {
                   Chip(label: Text(l10n.targetPhValue(formatPh(target)))),
               ],
             ),
+            if (state.calibration case final calibration?) ...[
+              const SizedBox(height: 8),
+              Text(
+                calibration.isFactory
+                    ? l10n.calFactory
+                    : l10n.calSummary(
+                        (calibration.efficiency * 100).toStringAsFixed(1),
+                        formatSignedMv(calibration.offset),
+                      ),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ],
         ),
       ),

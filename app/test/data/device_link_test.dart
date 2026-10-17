@@ -31,6 +31,9 @@ class FakeBle implements FlutterReactiveBle {
 
   var services = [_service];
   int? requestedMtu;
+
+  /// MTU the fake device grants; null grants what was requested.
+  int? grantedMtu;
   bool mtuFails = false;
   Object? writeError;
   int cancelledConnections = 0;
@@ -62,7 +65,7 @@ class FakeBle implements FlutterReactiveBle {
   Future<int> requestMtu({required String deviceId, required int mtu}) async {
     requestedMtu = mtu;
     if (mtuFails) throw Exception('mtu');
-    return mtu;
+    return grantedMtu ?? mtu;
   }
 
   @override
@@ -130,10 +133,43 @@ void main() {
     expect(events, [isA<PhReading>(), isA<ModeChanged>()]);
   });
 
-  test('connect: a failing MTU request is ignored', () async {
-    ble.mtuFails = true;
-    await connected();
-    expect(statuses.last, LinkStatus.connected);
+  group('connect: MTU', () {
+    /// Connecting fails with [LinkFailure.failed] and leaves nothing open.
+    Future<void> expectRejected() async {
+      final future = link.connect('dev');
+      final result = expectLater(
+        future,
+        throwsA(
+          isA<LinkException>().having(
+            (e) => e.reason,
+            'reason',
+            LinkFailure.failed,
+          ),
+        ),
+      );
+      await settle();
+      ble.update(DeviceConnectionState.connected);
+      await result;
+      await settle();
+      expect(statuses.last, LinkStatus.disconnected);
+      expect(ble.cancelledConnections, 1);
+    }
+
+    test('103 bytes is enough', () async {
+      ble.grantedMtu = 103;
+      await connected();
+      expect(statuses.last, LinkStatus.connected);
+    });
+
+    test('less than 103 bytes fails the connection', () async {
+      ble.grantedMtu = 102;
+      await expectRejected();
+    });
+
+    test('a failing MTU request fails the connection', () async {
+      ble.mtuFails = true;
+      await expectRejected();
+    });
   });
 
   test('connect: a device without the titrator service is rejected', () async {
