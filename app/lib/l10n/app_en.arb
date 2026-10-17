@@ -143,9 +143,5 @@
   "rangeEnd": "End",
   "rangeInvalid": "Start must be before end",
   "noDataInRange": "No data in this range",
-  "loadFailed": "Failed to load data",
-  "statMin": "Min",
-  "statMax": "Max",
-  "statAvg": "Average",
-  "statCount": "Points"
+  "loadFailed": "Failed to load data"
 }

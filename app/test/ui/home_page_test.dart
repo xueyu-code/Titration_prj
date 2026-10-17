@@ -89,9 +89,8 @@ void main() {
     device.state = DeviceState(
       link: LinkStatus.connected,
       mode: DeviceMode.idle,
-      ph: 7.02,
-      target: 7,
-      completedAt: DateTime(2026, 1, 1),
+      ph: 7.1,
+      completion: (time: DateTime(2026, 1, 1), target: 7, ph: 7.02),
     );
     await tester.pumpAndSettle();
     expect(find.text('Titration complete'), findsOneWidget);

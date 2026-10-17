@@ -86,9 +86,5 @@
   "rangeEnd": "结束时间",
   "rangeInvalid": "开始时间必须早于结束时间",
   "noDataInRange": "该时间范围内没有数据",
-  "loadFailed": "数据加载失败",
-  "statMin": "最小",
-  "statMax": "最大",
-  "statAvg": "平均",
-  "statCount": "点数"
+  "loadFailed": "数据加载失败"
 }

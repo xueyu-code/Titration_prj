@@ -10,6 +10,9 @@ import '../data/device_link.dart';
 import 'locale_controller.dart';
 import 'providers.dart';
 
+/// A titration the app saw reach its target.
+typedef Completion = ({DateTime time, double target, double ph});
+
 @immutable
 class DeviceState {
   const DeviceState({
@@ -20,7 +23,7 @@ class DeviceState {
     this.mode = DeviceMode.unknown,
     this.recent = const [],
     this.target,
-    this.completedAt,
+    this.completion,
   });
 
   final LinkStatus link;
@@ -37,8 +40,8 @@ class DeviceState {
   /// Target of the titration started from this app, while it runs.
   final double? target;
 
-  /// Set each time the app detects a finished titration.
-  final DateTime? completedAt;
+  /// Replaced each time the app detects a finished titration.
+  final Completion? completion;
 
   bool get connected => link == LinkStatus.connected;
 
@@ -51,7 +54,7 @@ class DeviceState {
     DeviceMode? mode,
     List<PhSample>? recent,
     ValueGetter<double?>? target,
-    ValueGetter<DateTime?>? completedAt,
+    Completion? completion,
   }) => DeviceState(
     link: link ?? this.link,
     deviceId: deviceId,
@@ -60,7 +63,7 @@ class DeviceState {
     mode: mode ?? this.mode,
     recent: recent ?? this.recent,
     target: target != null ? target() : this.target,
-    completedAt: completedAt != null ? completedAt() : this.completedAt,
+    completion: completion ?? this.completion,
   );
 }
 
@@ -166,6 +169,10 @@ class DeviceController extends Notifier<DeviceState> {
             state.mode == DeviceMode.titrating && mode != DeviceMode.titrating;
         if (stopped) _detector = null;
         state = state.copyWith(mode: mode, target: stopped ? () => null : null);
+      case DeviceError()
+          when state.target != null && state.mode != DeviceMode.titrating:
+        // The device refused to start (e.g. busy).
+        _clearTarget();
       default:
     }
   }
@@ -194,7 +201,10 @@ class DeviceController extends Notifier<DeviceState> {
   /// later readings cannot trigger it again.
   void _complete(double target, double ph, DateTime now) {
     _detector = null;
-    state = state.copyWith(target: () => null, completedAt: () => now);
+    state = state.copyWith(
+      target: () => null,
+      completion: (time: now, target: target, ph: ph),
+    );
     // Best effort: a lost link already stops the device.
     unawaited(_link.send(const StopAll()).onError((_, _) {}));
     final l10n = l10nFor(ref.read(localeProvider));

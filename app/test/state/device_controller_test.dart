@@ -176,7 +176,11 @@ void main() {
 
         await reading(7.01, 5);
         expect(state().target, isNull);
-        expect(state().completedAt, t0.add(const Duration(seconds: 5)));
+        expect(state().completion, (
+          time: t0.add(const Duration(seconds: 5)),
+          target: 7.0,
+          ph: 7.01,
+        ));
         expect(link.sent.last, {'cmd': 'stop'});
         final l10n = l10nFor(const Locale('en'));
         expect(notifier.shown, [
@@ -226,7 +230,7 @@ void main() {
         await reading(7.0, s);
       }
       expect(notifier.shown, isEmpty);
-      expect(state().completedAt, isNull);
+      expect(state().completion, isNull);
       expect(link.sent, hasLength(1), reason: 'only the start command');
     });
 
@@ -247,6 +251,15 @@ void main() {
         controller().startTitration(7.0),
         throwsA(isA<LinkException>()),
       );
+      expect(state().target, isNull);
+    });
+
+    test('a start refused by the device clears the target', () async {
+      await controller().connect('AA:BB', 'Titrator-1');
+      await mode(DeviceMode.moving);
+      await controller().startTitration(7.0);
+      link.emit(const DeviceError('busy'));
+      await settle();
       expect(state().target, isNull);
     });
 

@@ -46,10 +46,11 @@ class SampleStore {
   /// Buffers one sample; flushed automatically.
   void add(PhSample sample) {
     _buffer.add(sample);
+    // Background flushes drop a failed batch quietly; see [flush].
     if (_buffer.length >= _flushSize) {
-      unawaited(flush());
+      flush().ignore();
     } else {
-      _timer ??= Timer(_flushDelay, flush);
+      _timer ??= Timer(_flushDelay, () => flush().ignore());
     }
   }
 

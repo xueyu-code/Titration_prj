@@ -81,18 +81,17 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  void _showCompleted() {
+  void _showCompleted(Completion completion) {
     final l10n = AppLocalizations.of(context);
-    final state = ref.read(deviceProvider);
-    // The state layer may already have cleared its target; the field is
-    // locked while titrating, so it still holds the value that was started.
-    final target = state.target ?? double.tryParse(_targetField.text);
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(l10n.titrationDoneTitle),
         content: Text(
-          l10n.titrationDoneBody(formatPh(target), formatPh(state.ph)),
+          l10n.titrationDoneBody(
+            formatPh(completion.target),
+            formatPh(completion.ph),
+          ),
         ),
         actions: [
           TextButton(
@@ -120,8 +119,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(deviceProvider);
 
-    ref.listen(deviceProvider.select((s) => s.completedAt), (prev, next) {
-      if (next != null && next != prev) _showCompleted();
+    ref.listen(deviceProvider.select((s) => s.completion), (prev, next) {
+      if (next != null && next != prev) _showCompleted(next);
     });
     ref.listen(deviceEventsProvider, (_, next) {
       final event = next.value;

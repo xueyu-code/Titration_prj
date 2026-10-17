@@ -18,13 +18,9 @@ class CalibrationPage extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final cal = ref.watch(calibrationProvider);
     final controller = ref.read(calibrationProvider.notifier);
-    final inProgress = switch (cal.phase) {
-      CalPhase.measuring || CalPhase.sampling || CalPhase.finishing => true,
-      CalPhase.setup || CalPhase.done => false,
-    };
 
     return PopScope(
-      canPop: !inProgress,
+      canPop: !cal.inProgress,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
         final discard = await confirm(

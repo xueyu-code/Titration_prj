@@ -44,7 +44,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('shows the last hour with statistics', (tester) async {
+  testWidgets('shows the last hour', (tester) async {
     store = FakeSampleStore([
       PhSample(now.subtract(const Duration(minutes: 30)), 6.5),
       PhSample(now.subtract(const Duration(minutes: 20)), 7.0),
@@ -54,9 +54,6 @@ void main() {
 
     expect(store.ranges, [const Duration(hours: 1)]);
     expect(find.byType(LineChart), findsOneWidget);
-    for (final text in ['6.50', '7.50', '7.00', '3']) {
-      expect(find.text(text), findsOneWidget, reason: text);
-    }
   });
 
   testWidgets('re-queries when a preset is chosen', (tester) async {

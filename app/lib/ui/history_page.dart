@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -7,7 +5,6 @@ import 'package:intl/intl.dart';
 import '../core/ph_sample.dart';
 import '../l10n/app_localizations.dart';
 import '../state/providers.dart';
-import 'format.dart';
 import 'widgets/language_button.dart';
 import 'widgets/ph_chart.dart';
 
@@ -187,7 +184,7 @@ class _ResultCard extends StatelessWidget {
 
     return Card(
       child: SizedBox(
-        height: 380,
+        height: 320,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FutureBuilder<List<PhSample>>(
@@ -203,72 +200,11 @@ class _ResultCard extends StatelessWidget {
               if (data.isEmpty) {
                 return Center(child: Text(l10n.noDataInRange));
               }
-              return Column(
-                children: [
-                  Expanded(
-                    child: PhChart(samples: data, showDate: showDate),
-                  ),
-                  const SizedBox(height: 16),
-                  _Stats(data),
-                ],
-              );
+              return PhChart(samples: data, showDate: showDate);
             },
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Min / max / average pH and point count.
-class _Stats extends StatelessWidget {
-  const _Stats(this.samples);
-
-  final List<PhSample> samples;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    var min = samples.first.ph;
-    var max = min;
-    var sum = 0.0;
-    for (final s in samples) {
-      min = math.min(min, s.ph);
-      max = math.max(max, s.ph);
-      sum += s.ph;
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      children: [
-        _Stat(l10n.statMin, formatPh(min)),
-        _Stat(l10n.statMax, formatPh(max)),
-        _Stat(l10n.statAvg, formatPh(sum / samples.length)),
-        _Stat(l10n.statCount, '${samples.length}'),
-      ],
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  const _Stat(this.label, this.value);
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      children: [
-        Text(value, style: theme.textTheme.titleMedium),
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
     );
   }
 }
