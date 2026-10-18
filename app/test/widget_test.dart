@@ -4,10 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:titrator_app/app.dart';
-import 'package:titrator_app/state/locale_controller.dart';
 import 'package:titrator_app/state/scan_controller.dart';
-
-import 'ui/harness.dart' show FakeLocale;
 
 class FakeScan extends ScanController {
   @override
@@ -22,10 +19,7 @@ class FakeScan extends ScanController {
 
 void main() {
   testWidgets('scan page follows the selected language', (tester) async {
-    final overrides = <Override>[
-      localeProvider.overrideWith(FakeLocale.new),
-      scanProvider.overrideWith(FakeScan.new),
-    ];
+    final overrides = <Override>[scanProvider.overrideWith(FakeScan.new)];
     await tester.pumpWidget(
       ProviderScope(overrides: overrides, child: const TitratorApp()),
     );

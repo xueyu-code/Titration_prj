@@ -1,16 +1,10 @@
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/protocol.dart';
 import '../data/app_notifier.dart';
 import '../data/device_link.dart';
 import '../data/foreground_service.dart';
-
-/// Overridden in main() with the instance loaded before runApp.
-final prefsProvider = Provider<SharedPreferences>(
-  (ref) => throw UnimplementedError('prefsProvider must be overridden'),
-);
 
 /// Overridden in main() with the initialized instance.
 final appNotifierProvider = Provider<AppNotifier>(

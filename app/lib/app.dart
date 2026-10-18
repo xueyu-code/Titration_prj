@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/app_notifier.dart';
 import 'l10n/app_localizations.dart';
@@ -16,13 +15,11 @@ Future<void> runTitratorApp({
   TransitionBuilder? builder,
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
-  final prefs = await SharedPreferences.getInstance();
   final notifier = AppNotifier();
   await notifier.init();
   runApp(
     ProviderScope(
       overrides: [
-        prefsProvider.overrideWithValue(prefs),
         appNotifierProvider.overrideWithValue(notifier),
         ...overrides,
       ],

@@ -5,16 +5,14 @@ import 'package:titrator_app/core/protocol.dart';
 import 'package:titrator_app/data/device_link.dart';
 import 'package:titrator_app/l10n/app_localizations.dart';
 import 'package:titrator_app/state/device_controller.dart';
-import 'package:titrator_app/state/locale_controller.dart';
 
-/// Hosts [child] with localization and the given provider overrides. The
-/// language selection is faked so no SharedPreferences are needed.
+/// Hosts [child] with localization and the given provider overrides.
 Widget testApp(
   Widget child, {
   List<Override> overrides = const [],
   Locale locale = const Locale('en'),
 }) => ProviderScope(
-  overrides: [localeProvider.overrideWith(FakeLocale.new), ...overrides],
+  overrides: overrides,
   child: MaterialApp(
     locale: locale,
     localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -22,14 +20,6 @@ Widget testApp(
     home: Scaffold(body: child),
   ),
 );
-
-class FakeLocale extends LocaleController {
-  @override
-  Locale? build() => null;
-
-  @override
-  void select(Locale? locale) => state = locale;
-}
 
 const connectedIdle = DeviceState(
   link: LinkStatus.connected,

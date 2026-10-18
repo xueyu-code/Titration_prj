@@ -11,12 +11,10 @@ import 'package:titrator_app/sim/sim_panel.dart';
 import 'package:titrator_app/sim/sim_titrator.dart';
 import 'package:titrator_app/state/calibration_controller.dart';
 import 'package:titrator_app/state/device_controller.dart';
-import 'package:titrator_app/state/locale_controller.dart';
 import 'package:titrator_app/state/providers.dart';
 import 'package:titrator_app/state/scan_controller.dart';
 
 import '../state/fakes.dart';
-import '../ui/harness.dart' show FakeLocale;
 
 /// The simulator wired into the real app, as main_sim.dart does.
 void main() {
@@ -33,7 +31,6 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: <Override>[
-          localeProvider.overrideWith(FakeLocale.new),
           appNotifierProvider.overrideWithValue(FakeAppNotifier()),
           deviceLinkProvider.overrideWithValue(link),
           scanProvider.overrideWith(SimScanController.new),

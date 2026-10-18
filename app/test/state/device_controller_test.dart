@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:titrator_app/core/protocol.dart';
 import 'package:titrator_app/data/device_link.dart';
 import 'package:titrator_app/state/device_controller.dart';
@@ -43,8 +42,7 @@ void main() {
     await mode(DeviceMode.titrating);
   }
 
-  setUp(() async {
-    SharedPreferences.setMockInitialValues({'locale': 'en'});
+  setUp(() {
     link = FakeDeviceLink();
     notifier = FakeAppNotifier();
     service = FakeForegroundService();
@@ -55,10 +53,11 @@ void main() {
         appNotifierProvider.overrideWithValue(notifier),
         foregroundServiceProvider.overrideWithValue(service),
         clockProvider.overrideWithValue(() => now),
-        prefsProvider.overrideWithValue(await SharedPreferences.getInstance()),
       ],
     );
     addTearDown(container.dispose);
+    // Pin the language: the default follows the system.
+    container.read(localeProvider.notifier).select(const Locale('en'));
     container.read(deviceProvider); // build: subscribes to the link
   });
 

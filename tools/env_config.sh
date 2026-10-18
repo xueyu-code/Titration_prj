@@ -36,7 +36,7 @@ FLUTTER_VERSION="${FLUTTER_VERSION:-3.47.7}"
 FORCE_VERSION="${FORCE_VERSION:-0}"
 JDK_VERSION="${JDK_VERSION:-17}"
 # 两个都要装：permission_handler_android / reactive_ble_mobile 的最新版要求 compileSdk 37；
-# 而 shared_preferences_android 的 compileSdk 是 flutter.compileSdkVersion（3.47.7 里是 36），flutter_local_notifications 也是 36。
+# 而 flutter_local_notifications 的 compileSdk 是 36。
 # 缺了 36，Gradle 会在第一次构建时自己下载安装，既慢又依赖网络和许可证，所以在这里先装好
 # SDK 37 的 sdkmanager 包名是 android-37.0（没有 android-37），见 5/8 里的符号链接
 ANDROID_PLATFORMS="${ANDROID_PLATFORMS:-android-36 android-37.0}"
@@ -44,12 +44,12 @@ ANDROID_PLATFORMS="${ANDROID_PLATFORMS:-android-36 android-37.0}"
 ANDROID_BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-36.0.0}"
 COMPILE_SDK="${COMPILE_SDK:-37}"
 # --create-project 时 flutter pub add 的包，默认是 app/ 现在用的这些。BLE: flutter_reactive_ble · 状态: flutter_riverpod
-# 权限: permission_handler · 图表: fl_chart · 本地存储: shared_preferences · 通知: flutter_local_notifications · 格式化: intl
+# 权限: permission_handler · 图表: fl_chart · 通知: flutter_local_notifications · 格式化: intl
 # 开发依赖 flutter_lints / fake_async；flutter_localizations 是 Flutter SDK 自带的包，要用 --sdk=flutter 单独加。
 # 都可以用环境变量覆盖，例如 FLUTTER_PACKAGES="flutter_reactive_ble"
 # 下面是早期的 Wi-Fi / MQTT 方案用的包，本项目没有采用，暂时留作参考
 # FLUTTER_PACKAGES="${FLUTTER_PACKAGES:-flutter_reactive_ble flutter_riverpod permission_handler mqtt_client web_socket_channel http network_info_plus connectivity_plus nsd}"
-FLUTTER_PACKAGES="${FLUTTER_PACKAGES:-flutter_reactive_ble flutter_riverpod permission_handler fl_chart shared_preferences flutter_local_notifications intl}"
+FLUTTER_PACKAGES="${FLUTTER_PACKAGES:-flutter_reactive_ble flutter_riverpod permission_handler fl_chart flutter_local_notifications intl}"
 FLUTTER_DEV_PACKAGES="${FLUTTER_DEV_PACKAGES:-flutter_lints fake_async}"
 FLUTTER_SDK_PACKAGES="${FLUTTER_SDK_PACKAGES:-flutter_localizations}"
 FLUTTER_HOME="${FLUTTER_HOME:-$HOME/development/flutter}"

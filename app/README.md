@@ -20,7 +20,8 @@ BLE as specified in [`docs/protocol.md`](../docs/protocol.md).
 - Guided multi-point pH calibration (6.86 / 4.00 / 9.18 or 7.00 / 4.01 / 10.01,
   at least 2 points): the app records the electrode voltage in each buffer,
   computes slope and offset and writes them to the device
-- Chinese / English UI, switchable in the app
+- Chinese / English UI, switchable in the app; the choice is not remembered
+  across launches (the app starts in the system language)
 
 ## Layout
 

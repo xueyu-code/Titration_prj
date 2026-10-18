@@ -133,7 +133,7 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 
 和本仓库的关系：
 
-- `--create-project` 会另建一个独立的新工程 `~/projects/titrator_app`，只含 Android 平台，依赖是 `app/` 现在用的那些（`flutter_reactive_ble`、`flutter_riverpod`、`permission_handler`、`fl_chart`、`shared_preferences`、`flutter_local_notifications`、`intl`，开发依赖 `flutter_lints`、`fake_async`，再加 SDK 自带的 `flutter_localizations`），并把 `compileSdk` 改成 37。它不会碰本仓库的 `app/`，而 `app/` 已经建好，所以日常用不到这个选项。脚本里早期 Wi-Fi / MQTT 方案的那串包（`mqtt_client`、`web_socket_channel`、`http`、`network_info_plus`、`connectivity_plus`、`nsd`）还留着，但已经注释掉，本项目没有采用，暂时留作参考。
+- `--create-project` 会另建一个独立的新工程 `~/projects/titrator_app`，只含 Android 平台，依赖是 `app/` 现在用的那些（`flutter_reactive_ble`、`flutter_riverpod`、`permission_handler`、`fl_chart`、`flutter_local_notifications`、`intl`，开发依赖 `flutter_lints`、`fake_async`，再加 SDK 自带的 `flutter_localizations`），并把 `compileSdk` 改成 37。它不会碰本仓库的 `app/`，而 `app/` 已经建好，所以日常用不到这个选项。脚本里早期 Wi-Fi / MQTT 方案的那串包（`mqtt_client`、`web_socket_channel`、`http`、`network_info_plus`、`connectivity_plus`、`nsd`）还留着，但已经注释掉，本项目没有采用，暂时留作参考。
 - `--with-esp-idf` 默认装 v5.5.5，克隆到 `~/esp/esp-idf-v5.5.5`，和仓库文档一致。但它仍然只从 GitHub 克隆（没有国内镜像），丢弃 `install.sh` 的输出（失败时只有一句笼统的警告），还会装 direnv、往 rc 文件里加 hook，并在 ESP-IDF 目录里写一个 `.envrc`。GitHub 慢或连不上时，按 `docs/DEV_GUIDE.md` 第 5 节手动装。
 
 ## 协作约定
