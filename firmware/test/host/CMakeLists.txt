@@ -76,11 +76,11 @@ function(host_test name)
     set_tests_properties(${name} PROPERTIES FAIL_REGULAR_EXPRESSION ":IGNORE")
 endfunction()
 
-host_test(test_protocol)     # WP1
-host_test(test_ph)           # WP1
-host_test(test_sensor_fault) # WP1
-host_test(test_axis)         # WP2
-host_test(test_titration)    # WP3
-host_test(test_device)       # WP3
-host_test(test_beaker)       # WP4
-host_test(test_closed_loop)  # WP4, passes once WP1-WP3 are in
+host_test(test_protocol)
+host_test(test_ph)
+host_test(test_sensor_fault)
+host_test(test_axis)
+host_test(test_titration)
+host_test(test_device)
+host_test(test_beaker)
+host_test(test_closed_loop)

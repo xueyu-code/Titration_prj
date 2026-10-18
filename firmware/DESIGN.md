@@ -17,7 +17,7 @@
 | 纯逻辑 | 放在 `components/core`，不依赖 ESP-IDF，用 gcc + CMake + Unity 在主机上测，包括"带模拟烧杯的闭环" | 没有硬件也能验证（第 14 节） |
 | 任务模型 | 只有一个控制任务调用 `device_*`；BLE、采样、电机中断都只往一个队列里发消息 | 业务状态只有一个所有者，不需要锁（第 3 节） |
 
-已验证：骨架用 ESP-IDF v5.5.5 执行 `idf.py build` 通过（esp32s3，镜像 220 KB，1.5 MB 分区还剩 86%）；主机测试工程可以编译运行，目前所有用例都是 `IGNORE`，CTest 把 `IGNORE` 判为失败。
+已验证：所有主机测试通过（含带模拟烧杯的闭环）；ESP-IDF v5.5.5 用 N16R8 配置执行 `idf.py build` 通过、无警告（esp32s3，镜像 556 KiB，1.5 MB 分区还剩 63%）。还没有在硬件上验证任何东西，待验证项见第 19 节。
 
 ---
 
@@ -77,7 +77,7 @@ ESP32-S3 数据手册 5.5 节的数字（测量条件：ADC 脚接 100 nF，直�
 | 工频干扰 | — | 窗口正好 500 ms，覆盖整 25 个 50 Hz 周期和整 30 个 60 Hz 周期，平均后基本抵消 | 满足 |
 | 与 BLE 共存 | — | 只用 ADC1；ADC2 才和 Wi-Fi 冲突 | 满足 |
 
-**联调时的验收测量**（WP1 负责给出方法和日志）：用电位器分压出 0.7–1.3 V 之间的约 10 个电压点，用万用表读出实际值，与固件日志里的 `V_adc` 对照，做直线拟合。残差 ≤ 1.2 mV（ADC 端，相当于 1 mV 电极端、约 0.017 pH）即合格。如果不合格，就把 `ph_adc.c` 换成外置 ADS1115（16 位，INL ±1 LSB），走 I2C，接口 `ph_adc.h` 不变，其他代码都不用改；GPIO8/GPIO9 可以留作 I2C 引脚。
+**联调时的验收测量**（清单见第 19 节）：用电位器分压出 0.7–1.3 V 之间的约 10 个电压点，用万用表读出实际值，与固件日志里的 `V_adc` 对照，做直线拟合。残差 ≤ 1.2 mV（ADC 端，相当于 1 mV 电极端、约 0.017 pH）即合格。如果不合格，就把 `ph_adc.c` 换成外置 ADS1115（16 位，INL ±1 LSB），走 I2C，接口 `ph_adc.h` 不变，其他代码都不用改；GPIO8/GPIO9 可以留作 I2C 引脚。
 
 **实现要点**（`ph_adc.c`）：用 `adc_continuous` 驱动，单通道 ADC1_CH0，6 dB 衰减，12 位，`BOARD_PH_ADC_SAMPLE_HZ` = 10 kHz，DMA 帧取约 100 ms（1000 个采样 × 4 B）。每累计 5000 个采样（按采样个数而不是按墙上时间分窗，这样工频抵消是精确的），就把原始码之和除以个数得到浮点均值，再用初始化时建好的分段线性表转换成 mV。这张表在 0–4095 之间每隔 64 个码取一个节点，节点值由 `adc_cali_raw_to_voltage`（曲线拟合方案）给出。之所以不直接对均值调用 `adc_cali_raw_to_voltage`，是因为它只接受整数码、输出整数 mV，会产生 1 mV 的台阶（相当于 0.83 mV 电极端），这比判稳要求的 1 mV 极差小不了多少。
 
@@ -281,7 +281,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 
 **IRAM**：`CONFIG_MCPWM_ISR_HANDLER_IN_IRAM`、`CONFIG_MCPWM_CTRL_FUNC_IN_IRAM`（`mcpwm_timer_set_period`、`mcpwm_comparator_set_compare_value`）、`CONFIG_PCNT_CTRL_FUNC_IN_IRAM`（`pcnt_unit_get_count`），以及 `core/linker.lf` 把 `axis.c` 放进 IRAM。强制电平和启停定时器的函数在 Flash 里，但只在停止时调用一次；运动期间不会写 Flash（`cal_set` 只在 idle 时接受），所以 ISR 不需要做成 cache-safe。
 
-**没有电机也能验证**（WP2 的板上验收）：PCNT 通过回环计的就是 STEP 脚，所以在一块裸 DevKitC 上就能检查"命令 N 步 → PCNT = N"。用一根杜邦线把 LIMIT 脚接到 GND 或 3V3，就能模拟开关。
+**没有电机也能验证**（清单见第 19 节）：PCNT 通过回环计的就是 STEP 脚，所以在一块裸 DevKitC 上就能检查"命令 N 步 → PCNT = N"。用一根杜邦线把 LIMIT 脚接到 GND 或 3V3，就能模拟开关。
 
 ### 4.4 速度曲线（`axis.c`，只用整数）
 
@@ -498,7 +498,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 **框架：ESP-IDF 自带的 Unity 源码**（`components/unity/unity/src/unity.c`）。理由：主机测试本来就要从 IDF 源码树里编译 cJSON，Unity 也在同一棵树里，不多引入任何依赖；它的浮点断言（`TEST_ASSERT_FLOAT_WITHIN`）和逐用例报告比自己写的断言省事；以后如果要在板上跑单元测试，用法也一样。IDF 的路径取自 `IDF_PATH`，默认是 `~/esp/esp-idf-v5.5.5`。
 
 - 每个模块一个可执行文件，由 CTest 驱动。默认打开 ASan 和 UBSan，core 用 `-Wall -Wextra -Werror -Wdouble-promotion` 编译（后者用来发现不小心写出的 double 运算，它在 S3 上是软件模拟的）。
-- **`IGNORE` 判为失败**（`FAIL_REGULAR_EXPRESSION ":IGNORE"`）：骨架里每个必测用例都已经以 `TEST_IGNORE_MESSAGE("TODO(WPn)")` 列出，实现者把它们变成真正的测试，全部通过才算完成。
+- **`IGNORE` 判为失败**（`FAIL_REGULAR_EXPRESSION ":IGNORE"`）：CTest 把 `IGNORE` 当作失败，这样不会有测试被悄悄留成未实现。
 - `CLOG_LEVEL`（CMake 缓存变量，0–4）可以在主机上打开 core 的日志，用来调试闭环测试。
 
 | 测试 | 内容 |
@@ -597,49 +597,28 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 
 ---
 
-## 19. 工作包
+## 19. 上板验证清单
 
-四个包可以**并行**开发。它们之间只通过已经定好的头文件交互，每个包只修改自己名下的文件。头文件、`config.h`、`board.h`、各个 `CMakeLists.txt`、`sdkconfig.defaults` 都已冻结，需要修改时，请提给小组长统一改。
+下面这些都还没有在硬件上验证过。除特别说明外，用一块只有 1.05 V 分压（见第 1.3 节）、没有接电机的裸板即可。
 
-**建议合并顺序**：WP1 → WP2 → WP3 → WP4。WP3 的 `test_device` 依赖 WP1 的 `proto_parse_cmd`、`ph_*` 和 `sensor_fault_*`；WP4 的闭环测试依赖前三个包。开发期间可以在本地临时用自己写的桩代替，但不要提交。
+**ADC 与标定存储**
+- GPIO1 接 1.05 V 分压：日志里的 `V_adc` 稳定。
+- 第 1.3 节的验收测量（0.7–1.3 V 之间约 10 个电压点，直线拟合残差 ≤ 1.2 mV）；不合格就换 ADS1115。
+- 接上 PH-4502C 模块后，拔掉电极、短接 BNC、拔掉 Po 线，分别记录 `V_adc`，确定 `SENSOR_RAIL_LO_MV` / `SENSOR_RAIL_HI_MV`（第 9 节）。
+- `cal_store`：`cal_set` 写入后重启，标定仍然生效。
 
-### WP1 协议与测量
+**步进（不接驱动）**
+- 命令 1、121、1212、23200 步，PCNT 计数都与命令完全相等。
+- 运行中 halt 后，位置等于 PCNT 计数。
+- 用杜邦线把 LIMIT 脚拉到有效电平，排液在 2 步以内停止。
+- 用逻辑分析仪或示波器检查启停时没有多余的边沿（重点：第一个周期使用新的周期值、撤掉强制电平时没有上升沿）。
 
-- **负责文件**：`components/core/src/protocol.c`、`ph.c`、`sensor_fault.c`；`components/platform/src/ph_adc.c`、`cal_store.c`；`test/host/test_protocol.c`、`test_ph.c`、`test_sensor_fault.c`。
-- **实现接口**：`core/protocol.h`、`core/ph.h`、`core/sensor_fault.h`、`platform/ph_adc.h`、`platform/cal_store.h`。
-- **验收标准**：
-  - 三个主机测试中列出的用例全部实现并通过（ASan/UBSan 无报告）。
-  - 事件文本和协议示例逐字一致：`{"evt":"ph","v":6.98,"mv":1.2}`、`{"evt":"state","s":"titrating"}`、`{"evt":"error","code":"limit","ch":1,"dir":"in"}`；所有事件在最坏取值下都不超过 100 B。
-  - `ph_adc.c`：ADC 连续模式加分段线性表（第 1.3 节），`idf.py build` 通过；在板上不接模块、改接 1.05 V 分压时，日志输出稳定的 `V_adc`。另外提交第 1.3 节"验收测量"的操作说明和日志格式。
-  - `cal_store.c`：写入、重启后读回、损坏或越界时回退到出厂值。
-- **边界**：不涉及状态机；不知道何时上报 `ph`（这由 WP3 的 `device` 决定）。
+**BLE**
+- App 能扫描到 `Titrator-XXXX`，排在列表最前面；连接后收到 `state` 和 `cal`，`ph` 以 2 Hz 上报。
+- `cal_set` 保存后重启，仍然生效。
+- 断开后能立即重新连上。
+- 写入一个 101 B 的命令，回 `bad_cmd`。
+- 用 nRF Connect 检查广播包是 21 B、设备名在扫描响应里。
 
-### WP2 运动
-
-- **负责文件**：`components/core/src/axis.c`；`components/platform/src/stepper.c`；`test/host/test_axis.c`。
-- **实现接口**：`core/axis.h`、`platform/stepper.h`。
-- **验收标准**：
-  - `test_axis` 中列出的用例全部通过；`axis.c` 中没有浮点运算、没有除以 64 位数、没有日志。
-  - `stepper.c` 按第 4 节实现（MCPWM + PCNT，每周期中断，强制低电平停止），`idf.py build` 通过。
-  - 在一块裸板上（不接驱动）验证并提交日志：命令 1、121、1212、23200 步，PCNT 结果都完全相等；运行中 halt 后位置等于 PCNT 计数；用杜邦线拉动 LIMIT 脚，排液在 2 步以内停止；用逻辑分析仪或示波器检查启停时没有多余的边沿（重点：第一个周期使用新的周期值、撤掉强制电平时没有上升沿）。
-- **边界**：不知道通道代表酸还是碱，也不知道协议；只通过 `stepper_end_cb_t` 回调上报结束。
-
-### WP3 控制
-
-- **负责文件**：`components/core/src/titration.c`、`device.c`；`test/host/test_titration.c`、`test_device.c`。
-- **实现接口**：`core/titration.h`、`core/device.h`。
-- **验收标准**：
-  - 两个主机测试中列出的用例全部通过，包括第 6 节状态表的每一格以及事件顺序。
-  - `titration.c` 和 `sim_titrator.dart` 的 `_control`/`_decide` 逐条对应（代码审阅时对照检查）。
-  - WP1、WP2 合并后，`test_closed_loop` 中与控制有关的用例全部通过（收敛、不收敛、试剂用完、电极故障）。如果需要调参，向小组长提出修改 `config.h` 里滴定相关的常量，并同步告知负责 App 模拟器的同事。
-- **边界**：只通过 `device_ports_t` 访问外部；不包含任何 ESP-IDF 头文件。
-
-### WP4 BLE、装配与闭环仿真
-
-- **负责文件**：`components/platform/src/ble_link.c`；`main/main.c`；`test/host/sim/beaker.c`、`rig.c`；`test/host/test_beaker.c`、`test_closed_loop.c`。
-- **实现接口**：`platform/ble_link.h`；`main.c` 里的任务、队列和端口（第 3 节）；`sim/beaker.h`、`sim/rig.h`。
-- **验收标准**：
-  - `idf.py build` 通过，固件大小在 1.5 MB 分区内。
-  - 在一块只有 1.05 V 分压、没有接电机的裸板上，用 App 能扫描到 `Titrator-XXXX`（排在列表前面），连接后收到 `state` 和 `cal`，`ph` 以 2 Hz 上报；`cal_set` 可以保存，重启后仍然生效；断开后能立即重新连上；写入一个 101 B 的命令，回 `bad_cmd`。用 nRF Connect 检查广播包是 21 B、设备名在扫描响应里。
-  - `test_beaker` 通过。`test_closed_loop` 的测试台完成后，在 WP1–WP3 合并后全部通过（失败时与相应的包一起定位问题）。
-- **边界**：`main.c` 只做装配，不写判断逻辑；`ble_link.c` 不解析 JSON。
+**任务栈**
+- 做完一次滴定和一次 `cal_set` 后，查看各任务的栈高水位（代码里现在没有打印，需要临时加日志调用 `uxTaskGetStackHighWaterMark`），确认余量够用。

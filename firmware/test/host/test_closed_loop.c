@@ -1,4 +1,4 @@
-/* device + axis + titration in sim/rig.c. Passes once WP1-WP3 are merged. */
+/* device + axis + titration in sim/rig.c. */
 #include <stdio.h>
 
 #include "unity.h"
