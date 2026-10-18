@@ -1,6 +1,6 @@
 # Titrator Firmware
 
-ESP-IDF firmware for the ESP32-S3-DevKitC-1 (ESP32-S3-WROOM-2-N32R16V) that
+ESP-IDF firmware for the ESP32-S3-DevKitC-1 (ESP32-S3-WROOM-1-N16R8) that
 drives the two syringe pumps, reads the pH module and talks to the app over
 BLE as specified in [`docs/protocol.md`](../docs/protocol.md). The design,
 pin plan and every decision behind it are in [`DESIGN.md`](DESIGN.md)
@@ -38,9 +38,9 @@ idf.py build                              # target and options come from sdkconf
 idf.py -p /dev/ttyUSB0 flash monitor      # UART port of the DevKitC
 ```
 
-If the board reports `Octal flash option selected, but EFUSE not configured!`,
-check `idf.py -p PORT efuse-summary` first. Never burn eFuses before that is
-understood; it is irreversible.
+`sdkconfig` is generated from `sdkconfig.defaults` only when `firmware/sdkconfig`
+does not exist. After `sdkconfig.defaults` changes (as with a board change),
+delete `firmware/sdkconfig` before `idf.py build`.
 
 ## Host tests
 

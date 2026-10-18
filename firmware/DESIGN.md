@@ -25,19 +25,19 @@
 
 ### 1.1 板卡和模组
 
-ESP32-S3-DevKitC-1 v1.1，模组 ESP32-S3-WROOM-2-N32R16V。以下事实来自乐鑫官方用户指南和 WROOM-2 数据手册 v1.7（已对照）：
+ESP32-S3-DevKitC-1（v1.0 或 v1.1），模组 ESP32-S3-WROOM-1-N16R8（丝印和板卡版本见第 18 节）。与固件有关的事实：
 
 | 项 | 事实 | 对固件的影响 |
 |---|---|---|
-| Flash / PSRAM | 32 MB 八线 Flash + 16 MB 八线 PSRAM，均为 1.8 V；VDD_SPI 已由 eFuse 设为 1.8 V | `sdkconfig.defaults` 打开 `ESPTOOLPY_OCT_FLASH`、`SPIRAM_MODE_OCT`；GPIO45 的 VDD_SPI 选择功能被 eFuse 覆盖 |
-| 被占用的 GPIO | GPIO26–32 用于内部 Flash，模组上不引出；GPIO33–37 用于八线接口。排针上虽然有 35/36/37，但不可用 | 全部避开 |
-| GPIO47/48 | 本模组上工作在 **1.8 V** | 不接 3.3 V 外设 |
+| Flash / PSRAM | 16 MB 四线（quad）SPI Flash + 8 MB 八线（octal）SPI PSRAM（封装内，ESP32-S3R8），VDD_SPI 均为 3.3 V | `sdkconfig.defaults` 打开 `ESPTOOLPY_FLASHMODE_QIO`、`ESPTOOLPY_FLASHSIZE_16MB`、`SPIRAM_MODE_OCT`；四线 Flash 没有 eFuse 要求 |
+| 被占用的 GPIO | GPIO26–32 用于 Flash/PSRAM 的 SPI 总线，排针上不引出；GPIO33–37 被八线 PSRAM 占用，排针上虽然有 35/36/37，但不可用 | 全部避开 |
+| GPIO47/48 | WROOM-1 上是普通的 **3.3 V** GPIO | 48 因 v1.0 的 RGB LED 而避开；47 留作备用 |
 | Strapping | GPIO0（弱上拉）、GPIO3（悬空）、GPIO45、GPIO46（弱下拉） | 避开 |
 | USB | GPIO19 = D−，GPIO20 = D+（原生 USB / USB-Serial-JTAG） | 避开 |
 | UART0 | GPIO43 TX、GPIO44 RX，接板载 USB 转串口，用作控制台 | 避开 |
-| RGB LED | v1.1 在 **GPIO38**（v1.0 在 GPIO48） | 不使用，保留 |
+| RGB LED | v1.1 在 **GPIO38**，v1.0 在 **GPIO48**；板卡版本尚未确认 | 38 和 48 都不使用，保留 |
 | JTAG | GPIO39–42 是 MTCK/MTDO/MTDI/MTMS；默认 JTAG 走 USB，这几个脚可以当普通 GPIO 用 | 留作备用 |
-| Flash 速度 | 八线 Flash 和 PSRAM 共用时钟；120 MHz DTR 是实验特性 | 两者都用 80 MHz（Flash DTR + PSRAM DTR，是官方支持的组合） |
+| Flash 速度 | Flash QIO 80 MHz + 八线 PSRAM 80 MHz 是支持的组合 | 两者都用 80 MHz |
 
 ### 1.2 pH 前端：PH-4502C
 
@@ -131,7 +131,7 @@ ESP32-S3 数据手册 5.5 节的数字（测量条件：ADC 脚接 100 nF，直�
 ```
 firmware/
 ├── CMakeLists.txt            ESP-IDF 工程（MINIMAL_BUILD）
-├── sdkconfig.defaults        八线 Flash/PSRAM、NimBLE、IRAM、日志
+├── sdkconfig.defaults        四线 Flash + 八线 PSRAM、NimBLE、IRAM、日志
 ├── version.txt               固件版本 → esp_app_desc
 ├── DESIGN.md                 本文
 ├── main/
@@ -485,9 +485,9 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 | CH1 限位 | 16 | J1-9 | NC 接 GND，上拉 + 100 nF |
 | CH2 限位 | 17 | J1-10 | 同上 |
 | pH ADC | 1 | J3-4 | ADC1_CH0；与电机线分在两侧排针，减少数字噪声耦合 |
-| 备用 | 2, 8–14, 18, 21, 39–42 | | 以后如果换 ADS1115，I2C 建议用 8/9 |
+| 备用 | 2, 8–14, 18, 21, 39–42, 47 | | 以后如果换 ADS1115，I2C 建议用 8/9 |
 
-**避开的引脚**：0、3、45、46（strapping）；19、20（USB）；43、44（UART0 控制台）；26–37（八线 Flash/PSRAM）；38（RGB LED）；47、48（1.8 V）。
+**避开的引脚**：0、3、45、46（strapping）；19、20（USB）；43、44（UART0 控制台）；26–37（Flash 和八线 PSRAM，其中 35–37 排针上有但被占用）；38、48（板载 RGB LED，v1.1 在 38，v1.0 在 48）。
 
 电机侧的 GPIO4–7、15–17 在 J1 上是连续的 7 个针脚（J1-4 到 J1-10），一根排线就能接完两路驱动和两个开关。
 
@@ -545,7 +545,7 @@ cmake --build firmware/test/host/build
 ctest --test-dir firmware/test/host/build --output-on-failure
 ```
 
-如果板子无法启动并提示 `Octal flash option selected, but EFUSE not configured!`，先运行 `idf.py -p PORT efuse-summary`，检查 `FLASH_TYPE` 是否为 1。WROOM-2 模组出厂时应该已经烧好。**未确认之前不要烧 eFuse**，这个操作不可逆。
+`sdkconfig` 只在 `firmware/sdkconfig` 不存在时才由 `sdkconfig.defaults` 生成；改了 `sdkconfig.defaults`（例如更换板卡）以后，先删除 `firmware/sdkconfig` 再 `idf.py build`。
 
 ---
 
@@ -564,7 +564,7 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 | 外置 ADC 驱动 | 内部 ADC 按数字估算已经足够（第 1.3 节）；只有在实测 INL 不合格时才换，接口已经预留 |
 | 温度补偿、To/Do | 协议约定不做温度补偿；To 测的是电路板温度，Do 没有用处 |
 | Wi-Fi | 协议只定义了 BLE |
-| 板载 RGB LED 状态灯 | 需求里没有；以后要加，可以用 RMT 驱动 GPIO38 |
+| 板载 RGB LED 状态灯 | 需求里没有；以后要加，可以用 RMT 驱动（GPIO38 或 GPIO48，取决于板卡版本） |
 | 停止时减速 | 当前速度很低，立即停止不会失步；如果减速，`stop` 后还会多推出几十微升 |
 
 ---
@@ -592,7 +592,7 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 12. **ESP32-S3 ADC 在 0.7–1.3 V 区间的线性度**（第 1.3 节的验收测量）。不合格就换 ADS1115，这是本设计里唯一的"假设可能不成立"的地方。
 
 **板卡**
-13. 板子的确是 v1.1（RGB LED 在 GPIO38）；`FLASH_TYPE` eFuse 已经烧好（`idf.py efuse-summary`）。
+13. 模组丝印确实是 ESP32-S3-WROOM-1-N16R8，并确认板卡版本（v1.0 的 RGB LED 在 GPIO48，v1.1 在 GPIO38；两个都避开了，所以接线不依赖这一点）。
 14. 整机供电方案：USB 5 V 同时给 ESP32 和 PH-4502C 供电，电机电源另接，所有地接在一起（建议星形接地，pH 信号地单独回到 ESP32 的 GND）。
 
 ---

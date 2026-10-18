@@ -1,11 +1,11 @@
 /*
- * Board wiring: ESP32-S3-DevKitC-1 v1.1 with ESP32-S3-WROOM-2-N32R16V.
+ * Board wiring: ESP32-S3-DevKitC-1 (v1.0 or v1.1) with ESP32-S3-WROOM-1-N16R8.
  * [待硬件确认] The whole table is a draft until the wiring exists; see
  * DESIGN.md "引脚规划".
  *
- * Avoided: GPIO26-37 (octal flash/PSRAM; 35-37 are on the header but taken),
- * GPIO0/3/45/46 (strapping), GPIO19/20 (USB), GPIO43/44 (UART0 console),
- * GPIO47/48 (1.8 V on this module), GPIO38 (on-board RGB LED, v1.1).
+ * Avoided: GPIO26-37 (flash and octal PSRAM; 35-37 are on the header but
+ * taken), GPIO0/3/45/46 (strapping), GPIO19/20 (USB), GPIO43/44 (UART0
+ * console), GPIO38 and GPIO48 (on-board RGB LED, v1.1 and v1.0).
  */
 #pragma once
 
