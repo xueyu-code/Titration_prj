@@ -37,6 +37,15 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    // Store libflutter.so and libapp.so compressed: uncompressed they take 18 MB
+    // of the APK, compressed the APK is about half the size. Android then extracts
+    // them at install (several MB more installed); runtime is unaffected.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 // Release APKs carry arm64-v8a only: the fat default bundles three copies of the

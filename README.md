@@ -65,7 +65,7 @@ cd app
 flutter pub get                  # 同时生成 lib/l10n/app_localizations*.dart
 flutter analyze
 flutter test
-flutter build apk --release      # 产物 build/app/outputs/flutter-apk/app-release.apk，装到手机用这个
+flutter build apk --release --obfuscate --split-debug-info=build/symbols   # 产物 build/app/outputs/flutter-apk/app-release.apk（约 8 MB），装到手机用这个
 
 # 没有硬件时用模拟器（需要连着安卓手机或模拟器）
 flutter run -t lib/main_sim.dart

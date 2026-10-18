@@ -137,10 +137,10 @@ flutter devices            # ✅
 ```bash
 cd app
 flutter run -d <设备id>                                          # 📖 调试运行，支持热重载（r）
-adb install -r build/app/outputs/flutter-apk/app-release.apk    # 📖 安装已编好的 release 包（先 flutter build apk --release）
+adb install -r build/app/outputs/flutter-apk/app-release.apk    # 📖 安装已编好的 release 包（先 flutter build apk --release --obfuscate --split-debug-info=build/symbols）
 ```
 
-装到手机上用 release 包：debug 包约 200 MB，release 包约 20 MB（见 `app/README.md`）。
+装到手机上用 release 包：debug 包约 200 MB，release 包约 8 MB（原生库压缩存放，装机后占用比 APK 大几 MB；混淆符号的用法见 `app/README.md`）。
 
 BLE 需要的权限已经声明在 `app/android/app/src/main/AndroidManifest.xml` 里：Android 12 及以上的 `BLUETOOTH_SCAN`（`neverForLocation`）和 `BLUETOOTH_CONNECT`，Android 11 及以下的 `BLUETOOTH`、`BLUETOOTH_ADMIN` 和定位权限，以及通知和前台服务权限。BLE 权限的写法参照 `flutter_reactive_ble` 的 README；运行时由 `permission_handler` 请求。这个 App 不走 Wi-Fi，所以 manifest 里没有网络相关的权限。
 
@@ -187,7 +187,7 @@ ln -s android-37.0 ~/Android/Sdk/platforms/android-37
 - 首次编译要下载并解压 Gradle、NDK、SDK 37 和 Maven 依赖，比较慢，是正常的。我这次磁盘上多出约 6 GB（`~/Android/Sdk` 增加约 2.3 GB，`~/.gradle` 约 4 GB）。
 - 我的验证环境连不上 GitHub，且 Gradle 不走系统代理，所以我给 JVM 单独设了代理才下载成功；这和你的网络无关。Maven 依赖（`dl.google.com`、Maven Central）在我这里能正常下载；如果在你的网络下卡住，需要配 Maven 镜像，**这一步我没有验证出可用的配置**，遇到时把报错贴出来再处理。⚠️
 - 以后插件升级后可能继续抬高 `compileSdk`，再遇到 `checkDebugAarMetadata` 报错时，同样是把 `compileSdk` 改到报错里要求的版本。
-- `release` 包（`flutter build apk --release`）在 2026-10-16 的临时工程里我没有编。本仓库的 `app/` 已经编出过 release APK（约 20 MB，`app/build/app/outputs/flutter-apk/app-release.apk`，✅ 文件在本机存在），安装用它，见 `app/README.md`。
+- `release` 包（`flutter build apk --release`）在 2026-10-16 的临时工程里我没有编。本仓库的 `app/` 已经用 `flutter build apk --release --obfuscate --split-debug-info=build/symbols` 编出过 release APK（约 8 MB，`app/build/app/outputs/flutter-apk/app-release.apk`，✅ 本机编成，文件在本机存在），安装用它，见 `app/README.md`。
 
 ### 4.5 Flutter 常用命令
 
@@ -208,7 +208,7 @@ ln -s android-37.0 ~/Android/Sdk/platforms/android-37
 | `flutter run -d <设备id>` | 运行；`--release` / `--profile` 切换模式 | 📖 |
 | `flutter run -t lib/main_sim.dart` | 运行无硬件的模拟器版本（见 `app/README.md`） | 📖 |
 | `flutter build apk --debug` | 打 debug APK（先满足 4.4 的条件） | 🧪 |
-| `flutter build apk --release` | 打 release APK，装到手机用这个 | ✅ 本仓库的 `app/` 编出过，见 4.4 |
+| `flutter build apk --release --obfuscate --split-debug-info=build/symbols` | 打 release APK（混淆，符号文件存到 `build/symbols`），装到手机用这个 | ✅ 本仓库的 `app/` 编出过，见 4.4 |
 | `flutter build apk --release --split-per-abi` | 按 CPU 架构拆成多个更小的 APK | 📖 |
 | `flutter build linux` | 打 Linux 桌面包（本仓库的 `app/` 没有 linux 平台，用不到） | ✅（之前在临时工程冒烟测试通过） |
 | `flutter install -d <设备id>` | 把已构建的 App 装到设备 | 📖 |

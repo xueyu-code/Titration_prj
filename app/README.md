@@ -44,12 +44,20 @@ Toolchain: Flutter 3.47.7, Android SDK 37, JDK 17 (see `docs/DEV_GUIDE.md`).
 flutter pub get          # also generates lib/l10n/app_localizations*.dart
 flutter analyze
 flutter test
-flutter build apk --release   # install this one on the phone
+flutter build apk --release --obfuscate --split-debug-info=build/symbols   # install this one on the phone
 ```
 
 Install release builds, not debug ones: a debug APK is ~200 MB, the release
-APK ~20 MB. It contains arm64-v8a only (see `android/app/build.gradle.kts`).
+APK about 8 MB. It contains arm64-v8a only, with the native libraries stored
+compressed (see `android/app/build.gradle.kts`); Android extracts them at
+install, so the installed app takes several MB more than the APK.
 Use debug builds (`flutter run`) only for development with hot reload.
+
+`build/symbols` holds the debug symbols of exactly that build. To decode a crash
+stack from an obfuscated APK, run
+`flutter symbolize -i <stack file> -d build/symbols/app.android-arm64.symbols`;
+keep a copy of the symbols next to any APK you hand out if you care about crash
+traces.
 
 `compileSdk` is 37 because `permission_handler_android` and
 `reactive_ble_mobile` require it.
