@@ -376,7 +376,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 与协议第 4 节和 `app/lib/sim/sim_titrator.dart`（v3）的 `_control` / `_decide` 一一对应，常量同名同值（第 12 节）。
 
 1. **等稳定**：滴定开始、每剂**送完**、每次"保持"决定之后，重新开始等待。`SETTLE_SKIP_MS` 内的读数丢弃；之后把读数放进长度为 `SETTLE_N` 的窗口。窗口满且极差 ≤ `SETTLE_SPAN_PH`，或者等待已达 `SETTLE_MAX_MS`，就用**窗口平均值**做决定。
-2. **保持带**：|target − pH| ≤ `HOLD_TOL_PH` 时不加液，重新等待。完成由 App 判定（连续 5 s 在 ±0.05 以内），之后 App 发送 `stop`。
+2. **保持带**：|target − pH| ≤ `HOLD_TOL_PH` 时不加液，重新等待。完成由 App 判定（连续 5 s 在 ±0.05 以内，且这 5 s 内读数极差 ≤ 0.03，与 `SETTLE_SPAN_PH` 相同），之后 App 发送 `stop`。
 3. **方向**：pH 高于目标加酸（通道 1），低于目标加碱（通道 2）。
 4. **剂量**：第一剂 `FIRST_DOSE_UL`。之后计算 gain =（上一剂是碱则取 +1，是酸则取 −1）×（本次 pH − 上一剂决定时的 pH）。gain ≥ `SETTLE_SPAN_PH` 时，剂量 = `DOSE_GAIN` × |err| × 上一剂 / gain；否则为上一剂的 2 倍。
 5. **换向**：方向和上一剂不同时，记一次换向。累计到第 `MAX_REVERSALS` 次，或者上一剂已经是 `MIN_DOSE_UL`，就返回 `TITR_NO_CONVERGE`；否则剂量减半。

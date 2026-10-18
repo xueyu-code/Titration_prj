@@ -9,7 +9,8 @@ BLE as specified in [`docs/protocol.md`](../docs/protocol.md).
 - Live pH value and curve (the last 5 minutes, or since the latest titration
   started, up to 60 minutes); shows the calibration stored on the device
 - Automatic titration to a target pH (0–14, 2 decimals); the app detects
-  completion (pH within ±0.05 for 5 s), stops the device and notifies the user
+  completion (pH within ±0.05 and steady, spanning at most 0.03, for 5 s),
+  stops the device and notifies the user
 - Keeps running during a titration with the screen off or the app in the
   background (Android foreground service with an ongoing notification), and
   notifies when the titration ends abnormally: connection lost or a device
