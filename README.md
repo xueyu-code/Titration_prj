@@ -82,7 +82,7 @@ idf.py build                              # 目标芯片和选项来自 sdkconfi
 idf.py -p /dev/ttyUSB0 flash monitor      # 板上 UART 口；原生 USB 口是 /dev/ttyACM0
 ```
 
-烧录需要用户在 `dialout` 组里。主机测试不需要开发板（在仓库根目录运行）：
+烧录需要用户在 `dialout` 组里，否则报 `Permission denied`。运行 `sudo usermod -aG dialout $USER` 之后要注销再登录才生效（只想让当前终端生效，用 `newgrp dialout`），再用 `id -nG` 确认输出里有 `dialout`，细节见 `docs/DEV_GUIDE.md` 3.1。主机测试不需要开发板（在仓库根目录运行）：
 
 ```bash
 cmake -S firmware/test/host -B firmware/test/host/build -G Ninja

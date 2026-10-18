@@ -38,6 +38,11 @@ idf.py build                              # target and options come from sdkconf
 idf.py -p /dev/ttyUSB0 flash monitor      # UART port of the DevKitC
 ```
 
+Flashing needs your user in the `dialout` group, otherwise `idf.py flash` fails
+with `Permission denied`. Run `sudo usermod -aG dialout $USER`, then log out and
+back in (or `newgrp dialout` for the current terminal only), and check that
+`id -nG` lists `dialout`. See `docs/DEV_GUIDE.md` section 3.1.
+
 `sdkconfig` is generated from `sdkconfig.defaults` only when `firmware/sdkconfig`
 does not exist. After `sdkconfig.defaults` changes (as with a board change),
 delete `firmware/sdkconfig` before `idf.py build`.
