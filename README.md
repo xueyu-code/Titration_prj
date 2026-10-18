@@ -50,6 +50,7 @@ Titration_prj/
 | 改 App 与固件之间的消息、错误码、行为约定 | `docs/protocol.md`（契约，先改它再改两端） |
 | 理解固件设计、引脚规划、待确认的硬件问题、上板验证项 | `firmware/DESIGN.md`（第 18 节待确认清单，第 19 节上板验证清单） |
 | 编译、测试 App，用模拟器 | `app/README.md` |
+| 打包 App 正式版发给别人 | 本文“打包正式版”一节 |
 | 编译、烧录固件，跑主机测试 | `firmware/README.md` |
 | 搭开发环境（Flutter、Android SDK、JDK、ESP-IDF、手机真机调试） | `docs/DEV_GUIDE.md` |
 | 了解最初要什么功能 | `docs/info.md` |
@@ -65,7 +66,7 @@ cd app
 flutter pub get                  # 同时生成 lib/l10n/app_localizations*.dart
 flutter analyze
 flutter test
-flutter build apk --release --obfuscate --split-debug-info=build/symbols   # 产物 build/app/outputs/flutter-apk/app-release.apk（约 8 MB），装到手机用这个
+flutter build apk --release --obfuscate --split-debug-info=build/symbols   # 打包正式版，见下面“打包正式版”
 
 # 没有硬件时用模拟器（需要连着安卓手机或模拟器）
 flutter run -t lib/main_sim.dart
@@ -89,6 +90,22 @@ cmake -S firmware/test/host -B firmware/test/host/build -G Ninja
 cmake --build firmware/test/host/build
 ctest --test-dir firmware/test/host/build --output-on-failure
 ```
+
+## 打包正式版
+
+在 `app/` 下运行：
+
+```bash
+cd app
+flutter build apk --release --obfuscate --split-debug-info=build/symbols
+```
+
+- 产物是 `app/build/app/outputs/flutter-apk/app-release.apk`，约 8 MB，只含 arm64-v8a。连着手机时用 `adb install -r build/app/outputs/flutter-apk/app-release.apk` 安装，或者把文件传到手机上安装。
+- 两个参数不要省：`--obfuscate` 混淆 Dart 代码，`--split-debug-info` 把调试符号从安装包里拿出来放进 `build/symbols`，合起来让 APK 小约 0.5 MB。原生库压缩存放已经写在 `android/app/build.gradle.kts` 里，不需要另加参数。
+- `build/symbols/app.android-arm64.symbols` 只对应这一次打出来的包（同目录下 `arm`、`x64` 的符号文件用不到）。混淆后的崩溃堆栈要靠它还原：`flutter symbolize -i <堆栈文件> -d build/symbols/app.android-arm64.symbols`。发出去的包以后可能要查崩溃的话，把这个文件和 APK 一起留一份；`build/` 不进 git，`flutter clean` 也会把它删掉。
+- 正式版用的是打包那台电脑的 debug 签名（见 `android/app/build.gradle.kts`），每台电脑的签名不同。手机上已经装着别的电脑打的包时，覆盖安装会失败，先卸载旧版再装。
+- 版本号是 `app/pubspec.yaml` 里的 `version`（现在是 `1.0.0+1`），发新版时改它。
+- `flutter build apk --release -t lib/main_sim.dart` 打出来的是模拟器版，不连真实设备，不要当正式版发。它和正式版的 application id 相同，装上会互相覆盖。
 
 ## 环境部署脚本 tools/env_config.sh
 
