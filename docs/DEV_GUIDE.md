@@ -1,7 +1,7 @@
 # 滴定仪项目开发指南（Flutter App + ESP-IDF 固件）
 
-适用环境：Ubuntu 24.04 · bash · 由 `my_env.sh` 部署的 Flutter 3.47.7 / Android SDK / JDK 17
-整理日期：2026-10-16
+适用环境：Ubuntu 24.04 · bash · 由 `tools/env_config.sh` 部署的 Flutter 3.47.7 / Android SDK / JDK 17 · ESP-IDF v5.5.5
+整理日期：2026-10-17
 
 ## 0. 先看这个：命令的验证程度
 
@@ -16,30 +16,30 @@
 
 标了“🧪 无板子”的命令，是指没接开发板时参数能被正确解析，并在访问串口那一步按预期报错；真正烧录没有验证。
 
+**版本说明**：本文的验证是 2026-10-16 做的，当时 ESP-IDF 用的是 v5.3。项目现在用 v5.5.5，所以 5.4、5.5 两节的 `idf.py` 命令表里的 🧪 / 📖 都是 v5.3 上的结果，没有在 v5.5.5 上逐条重跑。第 5 节里因为改成 v5.5.5 而变动的命令一律标 📖。
+
 验证细节和没验证到的地方见文末的附录 A。
 
-## 1. 你现在的状态
+## 1. 需要的工具和版本
 
-| 项目 | 状态 |
-|---|---|
-| Flutter 3.47.7（`~/development/flutter`） | ✅ 新开终端可直接用 |
-| Android SDK（platform 36 和 37.0，build-tools 36.0.0，platform-tools，NDK 28.2.13676358；旧脚本留下的 platform 35 和 build-tools 35.0.0 现在已经不在了，不是我卸的，见第 7 节末尾） | ✅ 已装；platform 36 曾按你的要求卸载，后来加 WiFi 相关库，构建时 Gradle 又自动装回来了，见 4.4 |
-| JDK 17 | ✅ 已装 |
-| `flutter doctor` | 只剩 channel、Chrome、`eglinfo` 三类无关紧要的告警 |
-| ESP-IDF | ❌ 未安装（`~/esp` 不存在） |
-| Flutter 工程 / 固件工程 | ❌ 都还没创建 |
-| 串口权限 | ❌ 你不在 `dialout` 组，烧录会 `Permission denied` |
-| `brltty` | ⚠️ 已安装；如果你的板子用 CH340 / CP210x 串口芯片，它会抢占 `/dev/ttyUSB0` |
-| Android 编译（Gradle） | 🧪 我用新建的临时工程（4.1 的 9 个业务包）编出了 debug APK；**新建工程要先改 `compileSdk`**（见 4.4，新版 `my_env.sh --create-project` 会自动改）；release 包、真机安装和运行没验证 |
-| 我对你环境做过的改动 | `~/Android/Sdk` 里：多了 `platforms/android-37.0`、符号链接 `platforms/android-37`、`ndk/28.2.13676358`；**按你的要求卸载了 `platforms/android-36`**（释放 147 MB），但后来验证 WiFi 相关库的构建时，Gradle 又把它自动装回来了（原因见 4.4）。`~/.gradle` 约 4 GB（Gradle 发行包和依赖缓存）；`~/.pub-cache` 多了几个包。没动你的 `~/.bashrc`，也没在你的目录下建任何工程 |
+| 项目 | 要求 | 验证 |
+|---|---|---|
+| 系统 | Ubuntu 24.04（`tools/env_config.sh` 也支持 Ubuntu 22.04 和 Arch 系，见根目录 `README.md`） | ✅ 本机是 Ubuntu 24.04 |
+| Flutter | 3.47.7，装在 `~/development/flutter` | ✅ `flutter --version` 显示 3.47.7 |
+| Android SDK | 装在 `~/Android/Sdk`：platform 36 和 37.0、build-tools 36.0.0、platform-tools；App 的 `compileSdk` 是 37；NDK 由 Gradle 首次编译时自动下载。SDK 37 的目录叫 `platforms/android-37.0`，还要有一个符号链接 `platforms/android-37`。原因见 4.4 | ✅ 这些目录都在 |
+| JDK | 17 | ✅ `java -version` 显示 17 |
+| ESP-IDF | v5.5.5，装在 `~/esp/esp-idf-v5.5.5`，工具链在 `~/.espressif`。`firmware/README.md`、`firmware/DESIGN.md` 和主机测试的 `firmware/test/host/CMakeLists.txt` 都用这个路径 | ✅ `~/esp/esp-idf-v5.5.5/export.sh` 存在 |
+| 串口权限 | 用户必须在 `dialout` 组里，否则烧录报 `Permission denied`，见 3.1 | 用 `id -nG` 自己检查 |
+| `brltty` | 如果板子用 CH340 / CP210x 串口芯片，它会抢占 `/dev/ttyUSB0`，要卸掉，见 3.2 | ⚠️ 没有用 CH340 / CP210x 的板子验证过 |
 
-## 2. 推荐的下一步顺序
+`tools/env_config.sh` 可以一次装好 Flutter、Android SDK、JDK（ESP-IDF 要自己装，见第 5 节），用法见第 7 节。`flutter doctor` 里 channel、Chrome、`eglinfo` 三类告警无害，见第 8 节。
 
-1. 做 [第 3 节](#3-一次性系统准备)：加入 `dialout` 组（必做）。
-2. 做 [第 4 节](#4-flutter-工程)：创建 Flutter 工程，先用 Linux 桌面端跑通。
-3. 做 [第 5 节](#5-esp-idf)：安装 ESP-IDF，建固件工程，烧一个 `hello_world`。
-4. 在 Android 真机上跑一次 Flutter（4.3、4.4）。
-5. 约定 App 和固件之间的通信协议（[第 6 节](#6-目录结构与通信协议)），再开始写业务代码。
+## 2. 新同事上手顺序
+
+1. 做 [第 3 节](#3-一次性系统准备)：系统准备。加入 `dialout` 组是必做的，手机的 udev 权限和 `brltty` 按需处理。
+2. 做 [第 4 节](#4-flutter-工程)：装好 Flutter 环境（`tools/env_config.sh` 或手动，见第 1、7 节），在 `app/` 下拉依赖、`flutter analyze`、`flutter test`，再用 `flutter run -t lib/main_sim.dart` 在手机上跑无硬件的模拟器版本（4.3 讲真机连接）。
+3. 做 [第 5 节](#5-esp-idf)：安装 ESP-IDF v5.5.5，编译 `firmware/`，跑主机测试；有开发板再烧录。
+4. 读 `docs/protocol.md`（App 和固件之间的 BLE 协议）和根目录的 `README.md`（目录结构、该看哪份文档、协作约定），再开始改代码。
 
 ## 3. 一次性系统准备
 
@@ -67,7 +67,7 @@ sudo apt remove brltty
 
 ### 3.3 手机的 udev 权限（`adb devices` 显示 `no permissions` 时）
 
-`my_env.sh` 只写了 Google（`18d1`）和树莓派（`2e8a`）两个厂商 ID。别的手机要补一行：
+`tools/env_config.sh` 只写了 Google（`18d1`）和树莓派（`2e8a`）两个厂商 ID。别的手机要补一行：
 
 ```bash
 lsusb                      # 找到手机那一行，ID 后面冒号前的 4 位就是 idVendor
@@ -80,107 +80,84 @@ echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="XXXX", MODE="0666", GROUP="plugdev"' | 
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-然后拔插手机。你已经在 `plugdev` 组里。
+然后拔插手机。`tools/env_config.sh` 写 udev 规则时会把你加进 `plugdev` 组（要注销再登录才生效）。
 
 ## 4. Flutter 工程
 
-### 4.1 创建工程
+### 4.1 拉取依赖
 
-下面的目录结构见第 6 节：App 放 `~/projects/titrator/app`。
+Flutter 工程已经在仓库的 `app/` 里，不需要再 `flutter create`。第一次使用或 `pubspec.yaml` 变了之后：
 
 ```bash
-mkdir -p ~/projects/titrator && cd ~/projects/titrator
-flutter create --org com.lab --project-name titrator_app --platforms=android,linux app
 cd app
-flutter pub add flutter_reactive_ble flutter_riverpod permission_handler mqtt_client \
-                web_socket_channel http network_info_plus connectivity_plus nsd
-flutter pub add --dev flutter_lints
+flutter pub get           # ✅ 同时生成 lib/l10n/app_localizations*.dart（git 忽略的生成文件）
 ```
 
-- 上面 9 个业务包是 `my_env.sh --create-project` 默认会加的那一组（变量 `FLUTTER_PACKAGES`，见第 7 节）：
+依赖都写在 `app/pubspec.yaml` 里。App 只用 BLE 通信，不用 Wi-Fi、HTTP、MQTT。
 
-  | 用途 | 包 |
-  |---|---|
-  | BLE | `flutter_reactive_ble` |
-  | 状态管理、运行时权限 | `flutter_riverpod`、`permission_handler` |
-  | WiFi：和 ESP32 的 HTTP / WebSocket 服务通信 | `http`、`web_socket_channel` |
-  | WiFi：读当前网络、监听连接状态 | `network_info_plus`、`connectivity_plus` |
-  | WiFi：mDNS 发现设备 | `nsd` |
-  | 经 MQTT broker 通信 | `mqtt_client` |
+国内镜像 `pub.flutter-io.cn` 在 2026-10-16 验证时对 `win32` 和 `ffi_leak_tracker` 的压缩包返回 HTTP 525（镜像自身的问题，重试 5 次都一样，同一时间 `pub.dev` 正常）。遇到 `525 trying to find package …` 时，临时改用官方源：
 
-  这 9 个包 + `flutter_lints` 我在新建的临时工程里解析成功、编出了 debug APK（约 157 MB）。✅ 只验证了能编译，**没有**和真实的 ESP32 联调过。
-- 编译时会提示 `nsd_android` 用了 Kotlin Gradle Plugin：“Future versions of Flutter will fail to build if your app uses plugins that apply KGP”。现在只是警告；以后升级 Flutter 可能变成错误。不需要 mDNS 就别加 `nsd`（`FLUTTER_PACKAGES` 里去掉它）。✅ 警告是实际看到的，“以后会变成错误”是警告原文的说法。
-- 国内镜像 `pub.flutter-io.cn` 在我验证时对 `win32` 和 `ffi_leak_tracker` 的压缩包返回 HTTP 525（镜像自身的问题，重试 5 次都一样，同一时间 `pub.dev` 正常）。所以脚本在 `pub add` 失败后会自动改用 `https://pub.dev` 重试一次；手动操作时可以这样：`PUB_HOSTED_URL=https://pub.dev flutter pub get`。✅ 镜像是否一直如此我不知道，你那边可能是好的。
-- `--platforms=android,linux`：只生成 Android 和 Linux 两个平台目录。需要别的平台时，在工程目录里运行 `flutter create --platforms=ios .`（⚠️ 未验证）。
+```bash
+PUB_HOSTED_URL=https://pub.dev flutter pub get
+```
+
+✅ 这个故障是当时实际遇到的；镜像是否一直如此我不知道，你那边可能是好的。
 
 ### 4.2 运行和检查
 
 ```bash
-flutter analyze            # 静态检查 ✅
-flutter test               # 跑 test/ 下的测试 ✅
-flutter run -d linux       # 用 Linux 桌面窗口调界面 📖
+flutter analyze                    # 静态检查 ✅
+flutter test                       # 跑 test/ 下的测试 ✅
+flutter run -t lib/main_sim.dart   # 在连着的手机上跑无硬件的模拟器版本 📖
 ```
 
-`flutter_reactive_ble` 的 README 只有 Android 和 iOS 的说明，**Linux 桌面上没有 BLE**。Linux 窗口只能用来调界面，BLE 必须上 Android 真机。
+`app/` 里只有 `android/` 平台目录，没有 Linux 桌面端；而且 `flutter_reactive_ble` 的 README 只有 Android 和 iOS 的说明，Linux 桌面上没有 BLE。界面和逻辑靠 `flutter test` 和手机上的模拟器版本调试，BLE 联调必须上 Android 真机。模拟器版本的说明见 `app/README.md`。
 
-**编 Android 之前先做 4.4 的三处改动**，否则 `flutter run` / `flutter build apk` 会失败。
+编 Android 要满足 4.4 的三个条件（SDK 37、`compileSdk`、`android-37` 符号链接），否则 `flutter run` / `flutter build apk` 会失败。本仓库的 `app/` 已经带了其中两项，装 SDK 的机器上要有第三项，见 4.4。
 
 `flutter run` 运行后，终端里按键：`r` 热重载，`R` 热重启，`q` 退出，`h` 看全部按键。📖
 
 ### 4.3 Android 真机
 
-1. 手机：设置 → 关于手机，连点“版本号”打开开发者选项 → 打开“USB 调试”。
-2. 用数据线连电脑，手机上点“允许 USB 调试”。
-3. 检查：
+1. 手机：设置 → 关于手机，连点“版本号” 7 次打开开发者选项；在开发者选项里打开“USB 调试”。部分小米、OPPO、vivo 手机还要打开“USB 安装”。
+2. USB 连接模式选“文件传输”，不要选“仅充电”。
+3. 用数据线连电脑。如果开发环境在 VMware 虚拟机里，还要把手机接到虚拟机：VMware 菜单“虚拟机 → 可移动设备 → 找到你的手机 → 连接（断开与主机的连接）”，也可以在 VMware 底部状态栏的 USB 图标上右键，选“连接”。⚠️ 这一步没有验证，菜单名称随 VMware 版本可能不同。
+4. 手机上弹出“允许 USB 调试吗？”，点允许（建议勾选“始终允许”）。
+5. 检查：
 
 ```bash
 adb devices -l             # ✅ 应该看到设备状态是 device
 flutter devices            # ✅
-flutter run -d <设备id>    # 📖
 ```
 
-`adb devices` 的状态含义：`device` 正常；`unauthorized` 要在手机上点允许；`no permissions` 见 3.3；列表为空多半是线只能充电、或手机 USB 模式不对。
+`adb devices` 的状态含义：`device` 正常；`unauthorized` 要在手机上点允许；`no permissions` 是手机厂商不在 udev 规则里，按 3.3 补一行规则并拔插手机；列表为空多半是线只能充电、USB 模式不对，或（虚拟机里）手机还没连到虚拟机。
 
-BLE 在 Android 12 及以上需要在 `android/app/src/main/AndroidManifest.xml` 的 `<manifest>` 里声明权限。这段来自 `flutter_reactive_ble 5.6.0` 的 README：
+连好之后，在 `app/` 目录下运行或安装：
 
-```xml
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
-<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
-<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="30" />
+```bash
+cd app
+flutter run -d <设备id>                                          # 📖 调试运行，支持热重载（r）
+adb install -r build/app/outputs/flutter-apk/app-release.apk    # 📖 安装已编好的 release 包（先 flutter build apk --release）
 ```
 
-代码里还要用 `permission_handler` 在运行时请求这些权限。
+装到手机上用 release 包：debug 包约 200 MB，release 包约 20 MB（见 `app/README.md`）。
 
-走 WiFi 还要在同一个 `AndroidManifest.xml` 里补这些（`my_env.sh` **不会**自动写）：
-
-```xml
-<uses-permission android:name="android.permission.INTERNET" />
-<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-<uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-<!-- 读当前 WiFi 的 SSID 需要定位权限；Android 13+ 扫描 / 连接附近设备用 NEARBY_WIFI_DEVICES -->
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-<uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
-```
-
-- **`INTERNET` 必须加**：新建工程的 `src/main/AndroidManifest.xml` 里没有它，只有 `src/debug` 和 `src/profile` 里有（我看了模板）。所以 debug 下联网正常，装 release 包就连不上。✅
-- ESP32 上的服务一般是 `http://` / `ws://`，Android 默认拦截明文流量，需要在 `<application>` 标签上加 `android:usesCleartextTraffic="true"`。📖 这是 Android 的行为，我没在真机上试过。
-- 其余几条权限的具体要求（哪个 Android 版本需要哪条）我没有逐个核对，写代码时以各个包 README 为准。⚠️
+BLE 需要的权限已经声明在 `app/android/app/src/main/AndroidManifest.xml` 里：Android 12 及以上的 `BLUETOOTH_SCAN`（`neverForLocation`）和 `BLUETOOTH_CONNECT`，Android 11 及以下的 `BLUETOOTH`、`BLUETOOTH_ADMIN` 和定位权限，以及通知和前台服务权限。BLE 权限的写法参照 `flutter_reactive_ble` 的 README；运行时由 `permission_handler` 请求。这个 App 不走 Wi-Fi，所以 manifest 里没有网络相关的权限。
 
 ### 4.4 首次编译 Android：为什么用 SDK 37，以及要改什么
 
-**必须装 37 吗？** 对按 4.1 装的这组依赖，是的：`permission_handler_android 14.1.0` 和 `reactive_ble_mobile 5.6.0`（`flutter_reactive_ble 5.6.0` 的 Android 实现）自己的 `compileSdk` 就是 37，Android Gradle 插件要求依赖它们的 App 也用 37 编译，否则 `:app:checkDebugAarMetadata` 报错。这不是 Android 通用要求，而是这两个包当前版本的要求；如果把它们固定在更老的版本，可能用 36 也行，但我没有试过。⚠️
+**必须装 37 吗？** 对 `app/pubspec.yaml` 现在这组依赖，是的：`pubspec.lock` 里的 `permission_handler_android 14.1.0` 和 `reactive_ble_mobile 5.6.0`（`flutter_reactive_ble 5.6.0` 的 Android 实现）自己的 `compileSdk` 就是 37，Android Gradle 插件要求依赖它们的 App 也用 37 编译，否则 `:app:checkDebugAarMetadata` 报错。这不是 Android 通用要求，而是这两个包当前版本的要求；如果把它们固定在更老的版本，可能用 36 也行，但我没有试过。⚠️
 
-**36 还需要吗？** 看你装哪些包。只用 BLE / MQTT 那 4 个包时不需要：我卸载 `platforms/android-36` 后重新编过，成功，也没有被装回来。🧪 但加了 `connectivity_plus`、`network_info_plus`、`nsd` 之后需要：这三个包的 `compileSdk` 写的是 `flutter.compileSdkVersion`（Flutter 3.47.7 里是 36），而 App 本身改成了 37，所以 Gradle 要同时有 36 和 37。我编这 9 个包时，Gradle 发现缺 36，在构建中途自己下载安装了 `platforms/android-36`（这也是那次构建慢的原因之一）。🧪 因此新版 `my_env.sh` 默认两个都装，避免第一次构建时临时去下载。 但 **`build-tools 36.0.0` 不能卸**：它是另一个东西（构建工具，不是平台），AGP 9.1.0 的默认 build-tools 版本就是 `36.0.0`（我从 AGP 的 jar 里看到的），`flutter doctor` 显示的 “Android SDK version 36.0.0” 也是它。卸了只会让 Gradle 下次再下载一遍。
+**36 还需要吗？** 看你装哪些包。只用 BLE / MQTT 那 4 个包时不需要：我卸载 `platforms/android-36` 后重新编过，成功，也没有被装回来。🧪 但加了 `connectivity_plus`、`network_info_plus`、`nsd` 之后需要：这三个包的 `compileSdk` 写的是 `flutter.compileSdkVersion`（Flutter 3.47.7 里是 36），而 App 本身改成了 37，所以 Gradle 要同时有 36 和 37。（这三个包来自最初的脚手架，本 App 不使用它们；这一段是 2026-10-16 在临时工程里的验证记录。）我在临时工程里编带这三个包的那组 9 个业务包时，Gradle 发现缺 36，在构建中途自己下载安装了 `platforms/android-36`（这也是那次构建慢的原因之一）。🧪 因此新版 `tools/env_config.sh` 默认两个都装，避免第一次构建时临时去下载。 但 **`build-tools 36.0.0` 不能卸**：它是另一个东西（构建工具，不是平台），AGP 9.1.0 的默认 build-tools 版本就是 `36.0.0`（我从 AGP 的 jar 里看到的），`flutter doctor` 显示的 “Android SDK version 36.0.0” 也是它。卸了只会让 Gradle 下次再下载一遍。
 
-`my_env.sh` 已经改成默认装 `android-36` 和 `android-37.0`（见第 7 节）。在这之前，我在临时工程里直接编 `flutter build apk --debug` 会失败，做完下面三处改动才成功，产物 `build/app/outputs/flutter-apk/app-debug.apk`（约 151 MB）。🧪
+`tools/env_config.sh` 已经改成默认装 `android-36` 和 `android-37.0`（见第 7 节）。在这之前，我在临时工程里直接编 `flutter build apk --debug` 会失败，做完下面三处改动才成功，产物 `build/app/outputs/flutter-apk/app-debug.apk`（约 151 MB）。🧪
 
-先说明是怎么回事：Flutter 3.47.7 模板默认 `compileSdk` 是 36，但上面两个包要求 **Android SDK 37**。
+先说明是怎么回事：Flutter 3.47.7 模板默认 `compileSdk` 是 36，但上面两个包要求 **Android SDK 37**。下面三处改动里，本仓库的 `app/` 已经做了改动 1 和 2，改动 3 是装 SDK 的机器上的事。
 
-**改动 1：Gradle 发行包换国内镜像。** Gradle 官方地址（`services.gradle.org`）会 307 跳转到 `github.com/gradle/gradle-distributions/…`，GitHub 慢或不通时会下载超时。如果你那里下载正常，可以跳过这一步。
+**改动 1：Gradle 发行包换国内镜像。** Gradle 官方地址（`services.gradle.org`）会 307 跳转到 `github.com/gradle/gradle-distributions/…`，GitHub 慢或不通时会下载超时。如果你那里下载正常，可以跳过这一步。本仓库的 `app/android/gradle/wrapper/gradle-wrapper.properties` 已经指向腾讯云镜像，不用再做；下面的命令用于新建的 Flutter 工程。
 
 ```bash
-cd ~/projects/titrator/app
+cd app          # 换成你的工程目录
 sed -i 's#https\\://services.gradle.org/distributions/#https\\://mirrors.cloud.tencent.com/gradle/#' \
     android/gradle/wrapper/gradle-wrapper.properties
 grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
@@ -188,7 +165,7 @@ grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
 
 这条 `sed` 只换域名，版本号（现在是 `gradle-9.3.1-all.zip`）保持文件里原来的。腾讯云镜像上有这个文件，下载并解压成功。
 
-**改动 2：让 App 用 SDK 37 编译。** 每个新建的 Flutter 工程都要做（`./my_env.sh --create-project` 建的工程脚本已经替你做了；手动 `flutter create` 的要自己做）。在工程目录里：
+**改动 2：让 App 用 SDK 37 编译。** 本仓库的 `app/` 已经做过了（`android/app/build.gradle.kts` 里是 `compileSdk = 37`，`android/gradle.properties` 里有 `android.suppressUnsupportedCompileSdk=37`）。以后新建别的 Flutter 工程才需要再做（`tools/env_config.sh --create-project` 建的工程脚本会替你做）。在工程目录里：
 
 ```bash
 sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 37/' android/app/build.gradle.kts
@@ -203,14 +180,14 @@ echo 'android.suppressUnsupportedCompileSdk=37' >> android/gradle.properties
 ln -s android-37.0 ~/Android/Sdk/platforms/android-37
 ```
 
-**这台机器上这一步已经做过了**（SDK 37、NDK `28.2.13676358` 和符号链接都已经在 `~/Android/Sdk` 里）。换一台机器时，新版 `my_env.sh` 在装完 `android-37.0` 后会自动建这个链接（`sdkmanager` 里 37 只有 `platforms;android-37.0` 这一个包名，没有 `android-37`）。
+**这台机器上这一步已经做过了**（SDK 37、NDK `28.2.13676358` 和符号链接都已经在 `~/Android/Sdk` 里）。换一台机器时，新版 `tools/env_config.sh` 在装完 `android-37.0` 后会自动建这个链接（`sdkmanager` 里 37 只有 `platforms;android-37.0` 这一个包名，没有 `android-37`）。
 
 补充说明：
 
 - 首次编译要下载并解压 Gradle、NDK、SDK 37 和 Maven 依赖，比较慢，是正常的。我这次磁盘上多出约 6 GB（`~/Android/Sdk` 增加约 2.3 GB，`~/.gradle` 约 4 GB）。
 - 我的验证环境连不上 GitHub，且 Gradle 不走系统代理，所以我给 JVM 单独设了代理才下载成功；这和你的网络无关。Maven 依赖（`dl.google.com`、Maven Central）在我这里能正常下载；如果在你的网络下卡住，需要配 Maven 镜像，**这一步我没有验证出可用的配置**，遇到时把报错贴出来再处理。⚠️
 - 以后插件升级后可能继续抬高 `compileSdk`，再遇到 `checkDebugAarMetadata` 报错时，同样是把 `compileSdk` 改到报错里要求的版本。
-- `release` 包（`flutter build apk --release`）我没有编，R8 混淆等可能有新问题。⚠️
+- `release` 包（`flutter build apk --release`）在 2026-10-16 的临时工程里我没有编。本仓库的 `app/` 已经编出过 release APK（约 20 MB，`app/build/app/outputs/flutter-apk/app-release.apk`，✅ 文件在本机存在），安装用它，见 `app/README.md`。
 
 ### 4.5 Flutter 常用命令
 
@@ -219,8 +196,8 @@ ln -s android-37.0 ~/Android/Sdk/platforms/android-37
 | `flutter doctor` / `flutter doctor -v` | 环境检查（`-v` 看详情） | ✅ |
 | `flutter doctor --android-licenses` | 接受 Android SDK 协议 | 📖 |
 | `flutter devices` | 列出可运行的设备 | ✅ |
-| `flutter emulators` | 列出模拟器（你没装，会是空） | 📖 |
-| `flutter create --org com.lab --project-name x --platforms=android,linux 目录` | 新建工程 | ✅ |
+| `flutter emulators` | 列出模拟器（没装的话是空） | 📖 |
+| `flutter create --org com.lab --project-name x --platforms=android,linux 目录` | 新建工程（本仓库已有工程，用不到） | ✅ |
 | `flutter pub get` | 按 `pubspec.yaml` 拉依赖 | ✅ |
 | `flutter pub add 包名…` / `flutter pub add --dev 包名` | 加依赖 / 加开发依赖 | ✅ |
 | `flutter pub remove 包名` | 删依赖 | 📖 |
@@ -229,10 +206,11 @@ ln -s android-37.0 ~/Android/Sdk/platforms/android-37
 | `flutter analyze` | 静态分析 | ✅ |
 | `flutter test` | 跑测试 | ✅ |
 | `flutter run -d <设备id>` | 运行；`--release` / `--profile` 切换模式 | 📖 |
-| `flutter build apk --debug` | 打 debug APK（先做 4.4 的改动） | 🧪 |
-| `flutter build apk --release` | 打 release APK | ⚠️ 没编过，见 4.4 |
+| `flutter run -t lib/main_sim.dart` | 运行无硬件的模拟器版本（见 `app/README.md`） | 📖 |
+| `flutter build apk --debug` | 打 debug APK（先满足 4.4 的条件） | 🧪 |
+| `flutter build apk --release` | 打 release APK，装到手机用这个 | ✅ 本仓库的 `app/` 编出过，见 4.4 |
 | `flutter build apk --release --split-per-abi` | 按 CPU 架构拆成多个更小的 APK | 📖 |
-| `flutter build linux` | 打 Linux 桌面包 | ✅（之前冒烟测试通过） |
+| `flutter build linux` | 打 Linux 桌面包（本仓库的 `app/` 没有 linux 平台，用不到） | ✅（之前在临时工程冒烟测试通过） |
 | `flutter install -d <设备id>` | 把已构建的 App 装到设备 | 📖 |
 | `flutter logs` | 看已连接设备的日志 | 📖 |
 | `flutter clean` | 清构建缓存（构建出怪问题时先试它） | 📖 |
@@ -240,7 +218,7 @@ ln -s android-37.0 ~/Android/Sdk/platforms/android-37
 **不要用 `flutter upgrade`**：你的 SDK 是固定到 `3.47.7` 标签的浅克隆，`flutter doctor` 显示它不在标准分支上。升级 Flutter 请用脚本：
 
 ```bash
-FLUTTER_VERSION=<新版本号> FORCE_VERSION=1 ./my_env.sh
+FLUTTER_VERSION=<新版本号> FORCE_VERSION=1 ./tools/env_config.sh
 ```
 
 ⚠️ 这条的版本切换逻辑我在沙箱假目录里测过，没有在你真实的 SDK 上运行过。
@@ -265,91 +243,91 @@ FLUTTER_VERSION=<新版本号> FORCE_VERSION=1 ./my_env.sh
 
 ## 5. ESP-IDF
 
-脚本默认版本是 `v5.3`。官方要求 Python 3.8 或更新；我在临时目录里用你的 Python 3.12.3 完整跑通了 v5.3 的安装（`install.sh esp32s3`）和 `hello_world` 编译。🧪
+本项目用 ESP-IDF **v5.5.5**，装在 `~/esp/esp-idf-v5.5.5`（`firmware/README.md`、`firmware/DESIGN.md` 和主机测试都用这个路径）。✅ 这台机器上 `~/esp/esp-idf-v5.5.5/export.sh` 存在，`~/.espressif` 里有对应的工具链和 Python 环境。固件在 v5.5.5 上的构建结果见 `firmware/README.md` 的 Status。
 
-磁盘占用（我的测试值）：源码含子模块约 600 MB，`~/.espressif`（工具链、Python 环境和下载缓存）约 2.2 GB。
+下面 5.1 的安装命令是按 v5.5.5 改的，没有重新运行，一律标 📖。2026-10-16 的验证是在 v5.3 上做的（见附录 A）：官方要求 Python 3.8 或更新，当时用 Python 3.12.3 完整跑通了 v5.3 的安装（`install.sh esp32s3`）和 `hello_world` 编译。🧪
+
+磁盘占用（v5.3 的测试值）：源码含子模块约 600 MB，`~/.espressif`（工具链、Python 环境和下载缓存）约 2.2 GB。
 
 ### 5.1 安装
 
-**1. 前置依赖。** 这些你已经都有了（`git`、`cmake`、`ninja`、`python3-venv` ✅）。下面是官方文档里的完整清单，供换机器时参考：
+**1. 前置依赖。** 下面是官方文档里的完整清单（主机测试还需要 `cmake` 和 `ninja`）：
 
 ```bash
 sudo apt-get install git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
 ```
 
-**2. 下载源码。** 官方地址在 GitHub（命令来自乐鑫文档，我的环境连不上 GitHub，没有实际运行 📖）：
+**2. 下载源码。** 官方地址在 GitHub（命令来自乐鑫文档，我的环境连不上 GitHub，没有实际运行 📖）。目标目录名带版本号，和仓库文档里的路径一致：
 
 ```bash
 mkdir -p ~/esp && cd ~/esp
-git clone -b v5.3 --recursive --depth 1 --shallow-submodules https://github.com/espressif/esp-idf.git
+git clone -b v5.5.5 --recursive --depth 1 --shallow-submodules https://github.com/espressif/esp-idf.git esp-idf-v5.5.5
 ```
 
-GitHub 慢或连不上时，改用极狐 GitLab 上乐鑫的镜像。ESP-IDF 的 29 个子模块写的是相对地址，在这个镜像上能正确解析；但**其中 `components/cmock/CMock` 自己的嵌套子模块写死了 `github.com`**（只用于单元测试，编译你的工程用不到），所以不能直接用 `--recursive`，要分步做：
+GitHub 慢或连不上时，改用极狐 GitLab 上乐鑫的镜像。v5.3 时 ESP-IDF 的 29 个子模块写的是相对地址，在这个镜像上能正确解析；但**其中 `components/cmock/CMock` 自己的嵌套子模块写死了 `github.com`**（只用于单元测试，编译你的工程用不到），所以不能直接用 `--recursive`，要分步做：
 
 ```bash
-git clone -b v5.3 --depth 1 https://jihulab.com/esp-mirror/espressif/esp-idf.git
-cd esp-idf
-git submodule update --init --depth 1                                       # 29 个子模块，走镜像
-git submodule update --init --depth 1 --recursive -- components/mbedtls/mbedtls   # 这个子模块自带嵌套子模块，也走镜像
+git clone -b v5.5.5 --depth 1 https://jihulab.com/esp-mirror/espressif/esp-idf.git esp-idf-v5.5.5   # 📖
+cd esp-idf-v5.5.5
+git submodule update --init --depth 1                                       # 走镜像 📖
+git submodule update --init --depth 1 --recursive -- components/mbedtls/mbedtls   # 这个子模块自带嵌套子模块，也走镜像 📖
 ```
 
-这样会跳过 CMock 的嵌套子模块。🧪 如果你的 GitHub 能直连，直接用上一条官方命令即可。
+这个分步序列是在 v5.3 上验证的（🧪），**v5.5.5 上没有重跑**：v5.5.5 的 `.gitmodules` 里有 23 个子模块，URL 都是相对地址（在本机已装的那份里看过），但 CMock 的嵌套子模块是否还写死 `github.com`、`mbedtls` 是否仍需单独 `--recursive`，没有重新核对。⚠️ 如果你的 GitHub 能直连，直接用上一条官方命令即可。
 
-**不要用 Gitee 镜像（`gitee.com/EspressifSystems/esp-idf`）**：它的主仓库能克隆，但子模块（例如 `esp32-wifi-lib`）在 Gitee 上无法匿名访问，子模块拉不下来。
+**不要用 Gitee 镜像（`gitee.com/EspressifSystems/esp-idf`）**：它的主仓库能克隆，但子模块（例如 `esp32-wifi-lib`）在 Gitee 上无法匿名访问，子模块拉不下来。（v5.3 时的结论，v5.5.5 上没有重新试。）
 
 **3. 安装工具链。** 国内先设下载镜像：
 
 ```bash
 export IDF_GITHUB_ASSETS="dl.espressif.cn/github_assets"
-cd ~/esp/esp-idf
-./install.sh esp32s3
+cd ~/esp/esp-idf-v5.5.5
+./install.sh esp32s3                     # 📖
 ```
 
-工具链和 Python 虚拟环境会装到 `~/.espressif`。`IDF_GITHUB_ASSETS` 的作用见乐鑫文档：把安装时本来要从 `github.com` 下载的文件改走这个服务器。我的测试环境里 `github.com` 完全连不上，设了它之后 `install.sh esp32s3` 约 2 分钟装完、退出码 0。🧪
+工具链和 Python 虚拟环境会装到 `~/.espressif`。`IDF_GITHUB_ASSETS` 的作用见乐鑫文档：把安装时本来要从 `github.com` 下载的文件改走这个服务器。我的测试环境里 `github.com` 完全连不上，设了它之后 v5.3 的 `install.sh esp32s3` 约 2 分钟装完、退出码 0。🧪
 
 **4. 加一个别名。** ESP-IDF 官方的用法是每次要用时在当前终端里 `source export.sh`，所以给它起个短别名：
 
 ```bash
 cat >> ~/.bashrc <<'EOF'
-alias get_idf='. $HOME/esp/esp-idf/export.sh'
+alias get_idf='. $HOME/esp/esp-idf-v5.5.5/export.sh'
 EOF
 source ~/.bashrc
 ```
 
-这行在 `my_env.sh` 的标记块**外面**，所以以后 `./my_env.sh --uninstall` 不会帮你删它，需要的话自己删。
+📖 这行在 `tools/env_config.sh` 的标记块**外面**，所以以后 `./tools/env_config.sh --uninstall` 不会帮你删它，需要的话自己删。
 
-> 为什么不用 `./my_env.sh --with-esp-idf`：它把 `install.sh` 的输出全部丢掉，失败时你只能看到一句笼统的警告；它配的 direnv 也只在 `~/esp/esp-idf` 目录里自动生效，在你自己的固件目录里不生效。
+> 为什么不用 `./tools/env_config.sh --with-esp-idf`：它默认装 v5.3，目录固定是 `~/esp/esp-idf`，和本项目用的 v5.5.5 路径对不上（`ESP_IDF_VERSION=v5.5.5` 能改版本，改不了目录）；它把 `install.sh` 的输出全部丢掉，失败时你只能看到一句笼统的警告；它配的 direnv 也只在 `~/esp/esp-idf` 目录里自动生效，在你自己的固件目录里不生效。
 
-### 5.2 创建固件工程
+### 5.2 编译固件
 
-每个新终端，用 ESP-IDF 之前先运行一次 `get_idf`：
+固件工程已经在仓库的 `firmware/` 里，不需要再新建。每个新终端，用 ESP-IDF 之前先运行一次 `get_idf`：
 
 ```bash
 get_idf
-echo $IDF_PATH             # 应该显示 /home/xueyu/esp/esp-idf
-idf.py --version
+echo $IDF_PATH             # 应该显示 /home/<你的用户名>/esp/esp-idf-v5.5.5
+idf.py --version           # 应该显示 v5.5.5
 ```
 
-方式 A（推荐）：从官方 `hello_world` 示例复制，能一次验证整条烧录链路。
+✅ 编译（目标芯片和选项来自 `firmware/sdkconfig.defaults`，不需要 `set-target`；本机 v5.5.5 上编译通过、无警告）：
 
 ```bash
-cd ~/projects/titrator
-cp -r $IDF_PATH/examples/get-started/hello_world firmware
 cd firmware
-idf.py set-target esp32s3
 idf.py build
 ```
 
-方式 B：用 `idf.py` 建一个空骨架。
+改了 `sdkconfig.defaults` 之后，先删掉生成的 `firmware/sdkconfig` 再编译，否则新的默认值不会生效。
+
+不需要开发板的主机测试（用 gcc 编译 `core`，在模拟烧杯上跑完整的滴定环）✅，在仓库根目录运行：
 
 ```bash
-cd ~/projects/titrator
-idf.py create-project firmware
+cmake -S firmware/test/host -B firmware/test/host/build -G Ninja
+cmake --build firmware/test/host/build
+ctest --test-dir firmware/test/host/build --output-on-failure
 ```
 
-它会在当前目录下新建 `firmware/`，里面是 `CMakeLists.txt` 和 `main/firmware.c`（文件名跟着工程名走）。🧪
-
-`hello_world` 通了之后，和 App 的 `flutter_reactive_ble` 对接的 BLE 外设示例在 `$IDF_PATH/examples/bluetooth/nimble/bleprph`，可以拷过来改。
+主机测试只需要 ESP-IDF 的源码（用它里面的 cJSON 和 Unity）：`IDF_PATH` 已设置（运行过 `get_idf`）就用它，没设置则默认 `~/esp/esp-idf-v5.5.5`。烧录和编辑器配置（`.clangd`）见 `firmware/README.md`。
 
 ### 5.3 烧录和看串口
 
@@ -361,6 +339,8 @@ ls /dev/ttyACM* /dev/ttyUSB*
 
 - ESP32-S3 的**原生 USB 口**通常是 `/dev/ttyACM0`；
 - **串口桥芯片那个口**（CH340 / CP210x）是 `/dev/ttyUSB0`。
+
+`firmware/README.md` 里的示例用板上 UART 口 `/dev/ttyUSB0`；以你的板子实际出现的设备名为准。
 
 ```bash
 idf.py -p /dev/ttyACM0 flash monitor
@@ -429,46 +409,29 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 ## 6. 目录结构与通信协议
 
-建议把固件和 App 放在同一个仓库里：
+仓库的目录结构、各份文档分别看什么，见根目录的 [README.md](../README.md)。
 
-```
-~/projects/titrator/
-├── app/            Flutter 工程（4.1 创建）
-├── firmware/       ESP-IDF 工程（5.2 创建）
-└── docs/
-    └── protocol.md BLE / MQTT 通信约定
-```
+App 和固件之间的通信约定只有一份：[protocol.md](protocol.md)（BLE：GATT 服务、命令和事件的 JSON 格式、错误码、行为约定）。改协议先改这份文档，再改两端的代码。滴定常量和 `sim_titrator.dart` 的同步规则见根目录 `README.md` 的“协作约定”。
 
-```bash
-cd ~/projects/titrator && git init
-```
+## 7. `tools/env_config.sh` 速查
 
-在写业务代码之前，先把 `docs/protocol.md` 写出来。App 用到了 `flutter_reactive_ble`、`web_socket_channel` / `http` 和 `mqtt_client`，至少要定下：
-
-- BLE：GATT 服务 UUID、每个特征的 UUID 和读写 / 通知属性、数据包的字节格式、协议版本号；
-- WiFi：ESP32 是开热点还是连路由器、HTTP 接口路径、WebSocket 消息格式、mDNS 服务名；
-- MQTT：topic 命名、消息载荷格式；
-- 错误码和超时规则。
-
-固件和 App 都按这份文档实现，改协议时先改文档。
-
-## 7. `my_env.sh` 速查
+脚本在仓库的 `tools/` 下，在仓库根目录运行。它的功能、全部选项和卸载策略见根目录 `README.md`；这里只列常用命令。
 
 | 命令 | 作用 |
 |---|---|
-| `./my_env.sh --dry-run` | 只预览，不执行 |
-| `./my_env.sh` | 标准安装（幂等，可重跑） |
-| `./my_env.sh --with-esp-idf` | 顺便装 ESP-IDF（不推荐，见 5.1） |
-| `./my_env.sh --create-project` | 创建 `~/projects/titrator_app`（目录和本文的 `~/projects/titrator/app` 不同），加上 4.1 的 9 个包，并自动把 `compileSdk` 改成 37。`pub add` 失败时会改用 `pub.dev` 重试一次 |
-| `ANDROID_PLATFORMS="android-36 android-37.0" ./my_env.sh` | 改要装的 SDK 平台。默认值就是这个；`COMPILE_SDK=37` 同理，要和平台里的最高版本对应 |
-| `FLUTTER_PACKAGES="flutter_reactive_ble http" ./my_env.sh --create-project` | 改 `--create-project` 时 `flutter pub add` 的包。默认是 4.1 里那 9 个；`FLUTTER_DEV_PACKAGES` 同理，默认 `flutter_lints` |
-| `./my_env.sh --uninstall --dry-run` | 预览卸载会删什么（**卸载前务必先跑这条**） |
-| `./my_env.sh --uninstall` | 交互式卸载 |
-| `./my_env.sh --help` | 全部选项 |
+| `./tools/env_config.sh --dry-run` | 只预览，不执行 |
+| `./tools/env_config.sh` | 标准安装（幂等，可重跑） |
+| `./tools/env_config.sh --with-esp-idf` | 顺便装 ESP-IDF（不推荐，见 5.1：它默认装 v5.3、目录是 `~/esp/esp-idf`，和本项目的 v5.5.5 不一致） |
+| `ANDROID_PLATFORMS="android-36 android-37.0" ./tools/env_config.sh` | 改要装的 SDK 平台。默认值就是这个；`COMPILE_SDK=37` 同理，要和平台里的最高版本对应 |
+| `./tools/env_config.sh --uninstall --dry-run` | 预览卸载会删什么（**卸载前务必先跑这条**） |
+| `./tools/env_config.sh --uninstall` | 交互式卸载 |
+| `./tools/env_config.sh --help` | 全部选项 |
 
-**脚本里和 SDK 37 有关的改动**（相对旧版）：默认装 `android-36` 和 `android-37.0`（37 给 `permission_handler`、`reactive_ble`，36 给 `connectivity_plus`、`network_info_plus`、`nsd`，见 4.4）；装完后给 `android-37.0` 建 `platforms/android-37` 符号链接（已存在则跳过，目录没装成功则不建）；`--create-project` 建好工程后改 `android/app/build.gradle.kts` 的 `compileSdk` 并在 `android/gradle.properties` 加 `android.suppressUnsupportedCompileSdk=37`。`build-tools` 默认只装 `36.0.0`（AGP 9.1.0 的默认值，见 4.4）；`android-35` 和 `build-tools 35.0.0` 已从默认值里去掉。脚本**没有**自动换 Gradle 镜像，那一步（4.4 改动 1）仍需手动。
+`--create-project` 和默认的 `ESP_IDF_VERSION=v5.3` 是脚本在最初搭环境阶段留下的：`--create-project` 会另建一个 `~/projects/titrator_app` 工程，加上当时规划的 Wi-Fi / MQTT 相关包；本仓库的 `app/` 已经存在，只用 BLE，不需要这个选项。需要别的 ESP-IDF 版本时可以用环境变量 `ESP_IDF_VERSION` 覆盖，但装到的目录仍然固定。
 
-`android-35` 和 `build-tools 35.0.0` 是旧版脚本默认值留下的，没有任何依赖要求它们，所以新版脚本不再安装。我检查时它们已经不在 `~/Android/Sdk` 里了（不是我卸的）。我后来用 9 个业务包编 debug APK 时，SDK 里只有 `android-36`（Gradle 自动装的）、`android-37` / `android-37.0` 和 `build-tools 36.0.0`，编成功了，所以“没有 35 也能编”这一点验证过。🧪
+**脚本里和 SDK 37 有关的改动**（相对旧版）：默认装 `android-36` 和 `android-37.0`（37 给 `permission_handler`、`reactive_ble`，36 给最初脚手架里的 `connectivity_plus`、`network_info_plus`、`nsd`，见 4.4）；装完后给 `android-37.0` 建 `platforms/android-37` 符号链接（已存在则跳过，目录没装成功则不建）；`--create-project` 建好工程后改 `android/app/build.gradle.kts` 的 `compileSdk` 并在 `android/gradle.properties` 加 `android.suppressUnsupportedCompileSdk=37`。`build-tools` 默认只装 `36.0.0`（AGP 9.1.0 的默认值，见 4.4）；`android-35` 和 `build-tools 35.0.0` 已从默认值里去掉。脚本**没有**自动换 Gradle 镜像，那一步（4.4 改动 1）需要手动；本仓库的 `app/` 已经改好了。
+
+`android-35` 和 `build-tools 35.0.0` 是旧版脚本默认值留下的，没有任何依赖要求它们，所以新版脚本不再安装。2026-10-16 我检查时它们已经不在 `~/Android/Sdk` 里了（不是我卸的）。我后来在临时工程里用 9 个业务包编 debug APK 时，SDK 里只有 `android-36`（Gradle 自动装的）、`android-37` / `android-37.0` 和 `build-tools 36.0.0`，编成功了，所以“没有 35 也能编”这一点验证过。🧪
 
 ## 8. 常见问题
 
@@ -488,11 +451,13 @@ cd ~/projects/titrator && git init
 | `checkDebugAarMetadata` 报某个依赖 `requires … compile against version 37` | 见 4.4 改动 2（`compileSdk`） |
 | `sdkmanager` 打印 deprecated 警告 | 无害，照常使用 |
 | `flutter pub get` / `pub add` 报 `525 trying to find package …` | 国内镜像 `pub.flutter-io.cn` 对该包的下载出错（镜像自身问题）。临时改用官方源：`PUB_HOSTED_URL=https://pub.dev flutter pub get`；过一阵再试镜像也行 |
-| 首次 `flutter build apk` 中途打印 `Installing Android SDK Platform 36` | Gradle 在自动补装缺的平台。用新版 `my_env.sh` 的话 36 已经装好，不会再出现 |
+| 首次 `flutter build apk` 中途打印 `Installing Android SDK Platform 36` | Gradle 在自动补装缺的平台。用新版 `tools/env_config.sh` 的话 36 已经装好，不会再出现 |
 
 ---
 
 ## 附录 A：验证记录
+
+> 本附录记录的是 2026-10-16 的环境验证：当时 ESP-IDF 用的是 v5.3，Flutter 部分在一个临时工程里做（带 Wi-Fi / MQTT 等包，不是现在的 `app/`），脚本当时叫 `my_env.sh`（现在是 `tools/env_config.sh`，下文已改成现名）。保留作参考，命令、版本和结果没有随项目更新。
 
 ### A.1 怎么验证的
 
@@ -500,14 +465,14 @@ cd ~/projects/titrator && git init
 
 - `flutter create`、`pub add`（4 个业务包 + `flutter_lints`）、`pub get`、`pub outdated`、`analyze`、`test`、`devices` 在一个临时工程里实际运行，全部成功。
 - `flutter build apk --debug` 在同一个临时工程里：先失败两次（Gradle 下载超时；SDK 37 目录名），按 4.4 的三处改动处理后成功，产出 151 MB 的 `app-debug.apk`。
-- 卸载 platform 36 之后（此时依赖只有 4 个业务包）：新建一个临时工程，用从 `my_env.sh` 里原样抽出来的 `patch_compile_sdk` 函数改 `compileSdk`，再编 debug APK，成功（151 MB）。此时 `~/Android/Sdk/platforms` 里只有 `android-35`、`android-37`、`android-37.0`，编完后也没有 36 被装回来；`flutter doctor` 的 Android toolchain 一项仍是 ✓（`Platform android-37, build-tools 36.0.0`）。
-- 加 WiFi 相关库之后（9 个业务包 + `flutter_lints`）：新建临时工程，包列表直接从 `my_env.sh` 里抽出来用，`compileSdk` 用 `patch_compile_sdk` 改成 37。结果：
+- 卸载 platform 36 之后（此时依赖只有 4 个业务包）：新建一个临时工程，用从 `tools/env_config.sh` 里原样抽出来的 `patch_compile_sdk` 函数改 `compileSdk`，再编 debug APK，成功（151 MB）。此时 `~/Android/Sdk/platforms` 里只有 `android-35`、`android-37`、`android-37.0`，编完后也没有 36 被装回来；`flutter doctor` 的 Android toolchain 一项仍是 ✓（`Platform android-37, build-tools 36.0.0`）。
+- 加 WiFi 相关库之后（9 个业务包 + `flutter_lints`）：新建临时工程，包列表直接从 `tools/env_config.sh` 里抽出来用，`compileSdk` 用 `patch_compile_sdk` 改成 37。结果：
   - 第一次 `pub add` 失败，原因是镜像对个别包返回 525；改 `PUB_HOSTED_URL=https://pub.dev` 后 `pub get` 成功（73 个依赖有变化）。
   - `flutter build apk --debug` 成功，产物 `app-debug.apk` 约 157 MB，耗时约 9 分半。构建中途 Gradle 自动装回了 `platforms/android-36`，原因是三个新包的 `compileSdk` 是 36，见 4.4。
   - 这次构建**把 `platforms/android-36` 装回了你的 `~/Android/Sdk`**（约 147 MB），不是我手动装的，是 Gradle 做的。
   - 这次构建时 SDK 里已经没有 `android-35` 和 `build-tools 35.0.0`，所以顺带验证了没有它们也能编。
   - 没有测的：release 包、真机安装运行、和 ESP32 的实际通信。
-- `my_env.sh` 的改动：`bash -n` 通过；在假 `HOME` 里 `--dry-run --create-project --skip-system-upgrade` 退出码 0，预览里有 `sdkmanager --install platforms;android-37.0`、`ln -s android-37.0 …/platforms/android-37` 和 `compileSdk = 37`；`patch_compile_sdk` 在真实的 `flutter create` 模板上测了 5 种情况（首次、重复执行、`gradle.properties` 末尾无换行、无法识别的 build 文件、工程目录不存在），符号链接循环测了 5 种情况（新建、重复、目录缺失、dry-run、非 `.0` 平台），全部符合预期。**没有**在真机/真实 `HOME` 里完整跑一遍部署（sdkmanager 真装 37 没跑）。`pub add` 的 pub.dev 兜底用假的 `flutter` 命令测了 4 种情况（镜像成功、镜像失败 pub.dev 成功、两者都失败、本来就用 pub.dev 且失败时不重试），全部符合预期；真实的镜像故障是我在构建时遇到的。
+- `tools/env_config.sh` 的改动：`bash -n` 通过；在假 `HOME` 里 `--dry-run --create-project --skip-system-upgrade` 退出码 0，预览里有 `sdkmanager --install platforms;android-37.0`、`ln -s android-37.0 …/platforms/android-37` 和 `compileSdk = 37`；`patch_compile_sdk` 在真实的 `flutter create` 模板上测了 5 种情况（首次、重复执行、`gradle.properties` 末尾无换行、无法识别的 build 文件、工程目录不存在），符号链接循环测了 5 种情况（新建、重复、目录缺失、dry-run、非 `.0` 平台），全部符合预期。**没有**在真机/真实 `HOME` 里完整跑一遍部署（sdkmanager 真装 37 没跑）。`pub add` 的 pub.dev 兜底用假的 `flutter` 命令测了 4 种情况（镜像成功、镜像失败 pub.dev 成功、两者都失败、本来就用 pub.dev 且失败时不重试），全部符合预期；真实的镜像故障是我在构建时遇到的。
 - 其余 Flutter 命令用 `flutter <命令> --help` 确认命令和选项存在（`create`、`pub add/get/remove/upgrade/outdated`、`run`、`build apk`、`analyze`、`test`、`install`、`logs`、`clean`、`devices`、`emulators`、`precache`、`config`；`run` 的 `--release/--debug/--profile`；`build apk` 的 `--split-per-abi`；`doctor` 的 `--android-licenses`）。
 - `adb kill-server`、`adb start-server`、`adb devices -l`、`sdkmanager --list_installed` 实际运行；`adb install/uninstall/logcat/shell` 和 `sdkmanager --list/--install/--update/--licenses` 用 `--help` 确认存在。
 
@@ -534,41 +499,10 @@ cd ~/projects/titrator && git init
 | `idf.py menuconfig`、`docs`、`openocd`、`gdb`、`update-dependencies`、`partition-table-flash` | 交互式、需要浏览器或调试器，只确认了命令存在 |
 | 从 GitHub 克隆 ESP-IDF 的官方命令 | 我的环境连不上 GitHub |
 | Maven 镜像配置 | 我的环境能直连，没遇到问题，所以没有可验证的配置 |
-| `FLUTTER_VERSION=… FORCE_VERSION=1 ./my_env.sh` | 只在沙箱假目录里测过，没在你的真实 SDK 上跑 |
+| `FLUTTER_VERSION=… FORCE_VERSION=1 ./tools/env_config.sh` | 只在沙箱假目录里测过，没在你的真实 SDK 上跑 |
 | `flutter create --platforms=ios .` | 没跑 |
 | Arch / CachyOS / Manjaro | 只有 Ubuntu 机器；本文的命令都是 Ubuntu 的 |
 
 ### A.3 验证环境和你的网络可能不同
 
 我的验证环境里 `github.com` 连不上，Gradle 也不走系统代理，所以文中几处镜像用法是照着“GitHub 不通”验证的：Gradle 用腾讯云镜像、ESP-IDF 工具用 `IDF_GITHUB_ASSETS`、ESP-IDF 源码用极狐镜像。如果你那里 GitHub 直连快，这些镜像都不是必须的；但 4.4 的改动 2 和 3（SDK 37）与网络无关，一定要做。
-
-
-
-```sh
-1. 手机上开启 USB 调试
-
-1. 设置 → 关于手机，连点“版本号”7 次，打开开发者选项。
-2. 开发者选项里打开 USB 调试。部分小米、OPPO、vivo 手机还要打开“USB 安装”。
-3. USB 连接模式选“文件传输”，不要选“仅充电”。
-
-2. 把手机连到虚拟机
-
-VMware 菜单：虚拟机 → 可移动设备 → 找到你的手机 → 连接（断开与主机的连接）。也可以在 VMware 底部状态栏的 USB 图标上右键，选“连接”。
-
-3. 确认 adb 能看到手机
-
-adb devices -l
-- 手机上会弹“允许 USB 调试吗？”，点允许（建议勾选“始终允许”）。
-- 状态是 device 就是正常。
-- 状态是 unauthorized：去手机上点允许。
-- 状态是 no permissions：手机厂商不在 udev 规则里。先用 lsusb 找到手机那一行，记下 ID 后冒号前的 4 位，再执行下面的命令（XXXX 换成这 4 位），然后拔插一次手机：
-echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="XXXX", MODE="0666", GROUP="plugdev"' | sudo tee -a /etc/udev/rules.d/51-android.rules
-sudo udevadm control --reload-rules && sudo udevadm trigger
-
-4. 安装并运行 App
-
-cd ~/work_space/Titration_prj/app
-flutter run -d <设备id>        # 调试运行，支持热重载（r）
-# 或者直接装已编好的包：
-adb install -r build/app/outputs/flutter-apk/app-release.apk
-```

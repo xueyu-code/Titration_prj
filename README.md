@@ -1,0 +1,146 @@
+# 滴定仪（Titrator）
+
+面向高校小型实验室的 pH 自动滴定仪：ESP32-S3 固件驱动两个注射泵，读取 pH 模块，通过 BLE 与安卓 Flutter App 通信。用户在 App 里设目标 pH 并开始滴定，设备按目标 pH 自动加酸或加碱，App 看着曲线判断是否到达终点，到点后停止设备并通知用户。烧杯由用户手动搅拌。定位是小实验室的辅助工具，不做计量认证，功能保持克制。
+
+硬件：
+
+- 主控：ESP32-S3-DevKitC-1 N16R8（模组 ESP32-S3-WROOM-1-N16R8：16 MB quad flash，8 MB octal PSRAM）。
+- 两个 42 步进电机，各配一块 TMC2209（STEP/DIR 模式），驱动注射泵。通道 1 加酸，通道 2 加碱；每个通道在排空端有一个限位开关；吸液和排液共用一根管。
+- pH 模块 PH-4502C：Po 经 15k/10k 分压接 ESP32-S3 内部 ADC1。
+
+## 目录结构
+
+```
+Titration_prj/
+├── app/                     Flutter 安卓 App（只用 BLE）
+│   ├── lib/
+│   │   ├── core/            纯 Dart：协议编解码、完成判定、标定算法、数据模型
+│   │   ├── data/            平台适配：BLE 连接、通知、前台服务
+│   │   ├── state/           Riverpod 控制器：扫描、设备会话、标定、语言
+│   │   ├── ui/              页面和组件
+│   │   ├── l10n/            中英文 ARB 翻译（Dart 文件由 flutter pub get 生成）
+│   │   └── sim/             无硬件模拟器，只被 main_sim.dart 引用
+│   ├── test/                单元测试和 widget 测试
+│   └── android/             Android 工程：BLE 权限、前台服务、compileSdk 37
+├── firmware/                ESP-IDF 固件
+│   ├── main/                装配：队列、任务、设备端口
+│   ├── components/
+│   │   ├── core/            纯 C，不依赖 ESP-IDF：协议、pH、电极异常、运动、滴定环、设备状态机
+│   │   └── platform/        薄的 ESP-IDF 封装：stepper、ph_adc、ble_link、cal_store
+│   ├── test/host/           主机单元测试和闭环烧杯仿真
+│   ├── DESIGN.md            固件设计（中文）
+│   ├── README.md            固件构建和测试
+│   ├── sdkconfig.defaults   芯片、flash/PSRAM、NimBLE 等默认配置
+│   ├── version.txt          固件版本号
+│   └── .clangd              clangd 配置
+├── docs/
+│   ├── protocol.md          App 与固件之间的 BLE 协议（唯一契约）
+│   ├── DEV_GUIDE.md         开发环境搭建指南
+│   ├── info.md              最初的需求说明
+│   ├── PH4502C.PNG          PH-4502C 模块引脚参考图
+│   └── TMC2209.PNG          TMC2209 模块引脚参考图
+└── tools/
+    └── env_config.sh        开发环境部署和卸载脚本（见下文）
+```
+
+## 先看哪份文档
+
+| 想做什么 | 看 |
+|---|---|
+| 改 App 与固件之间的消息、错误码、行为约定 | `docs/protocol.md`（契约，先改它再改两端） |
+| 理解固件设计、引脚规划、待确认的硬件问题、上板验证项 | `firmware/DESIGN.md`（第 18 节待确认清单，第 19 节上板验证清单） |
+| 编译、测试 App，用模拟器 | `app/README.md` |
+| 编译、烧录固件，跑主机测试 | `firmware/README.md` |
+| 搭开发环境（Flutter、Android SDK、JDK、ESP-IDF、手机真机调试） | `docs/DEV_GUIDE.md` |
+| 了解最初要什么功能 | `docs/info.md` |
+
+## 快速开始
+
+环境没搭好先看 `docs/DEV_GUIDE.md`。
+
+App（在 `app/` 下）：
+
+```bash
+cd app
+flutter pub get                  # 同时生成 lib/l10n/app_localizations*.dart
+flutter analyze
+flutter test
+flutter build apk --release      # 产物 build/app/outputs/flutter-apk/app-release.apk，装到手机用这个
+
+# 没有硬件时用模拟器（需要连着安卓手机或模拟器）
+flutter run -t lib/main_sim.dart
+```
+
+模拟器版本和正式版 application id 相同，会覆盖安装；细节见 `app/README.md`。
+
+固件（ESP-IDF v5.5.5，装在 `~/esp/esp-idf-v5.5.5`）：
+
+```bash
+. ~/esp/esp-idf-v5.5.5/export.sh
+cd firmware
+idf.py build                              # 目标芯片和选项来自 sdkconfig.defaults
+idf.py -p /dev/ttyUSB0 flash monitor      # 板上 UART 口；原生 USB 口是 /dev/ttyACM0
+```
+
+烧录需要用户在 `dialout` 组里。主机测试不需要开发板（在仓库根目录运行）：
+
+```bash
+cmake -S firmware/test/host -B firmware/test/host/build -G Ninja
+cmake --build firmware/test/host/build
+ctest --test-dir firmware/test/host/build --output-on-failure
+```
+
+## 环境部署脚本 tools/env_config.sh
+
+用来在一台干净的 Linux 机器上一次装好 Flutter、Android SDK 和 JDK（不装 Android Studio），可选再装 ESP-IDF；也带卸载功能。约 930 行 bash，不要用 root 运行，需要 `sudo`。
+
+它做什么：
+
+- 支持 Ubuntu 22.04 / 24.04，以及 CachyOS / Arch / Manjaro；x86_64 和 aarch64。其他发行版和 Ubuntu 其他版本会直接退出。
+- 装系统依赖（git、cmake、ninja、clang、gtk3 等）和 OpenJDK 17。
+- 装 Flutter（默认 3.47.7，克隆到 `~/development/flutter`），装 Android cmdline-tools、platform-tools、platforms（默认 `android-36` 和 `android-37.0`，并给 37.0 建 `android-37` 符号链接）、build-tools 36.0.0 到 `~/Android/Sdk`，接受协议。
+- 默认使用国内镜像（Flutter 源码用清华镜像，写入 `PUB_HOSTED_URL` 和 `FLUTTER_STORAGE_BASE_URL` 指向 flutter-io.cn）；`--no-mirror` 改用官方源。
+- 装 adb 的 udev 规则（只有 Google `18d1` 和树莓派 `2e8a` 两个厂商 ID，别的手机见 `docs/DEV_GUIDE.md` 3.3），把用户加入 `plugdev`。
+- 往 `~/.bashrc`（zsh、fish 对应各自的配置文件）写一段带标记的环境变量块（`# >>> flutter-titrator-env >>>` 到 `# <<< flutter-titrator-env <<<`），并执行 `flutter precache`。
+- 幂等，可重复运行：已有的东西跳过，环境变量块先删后写。安装记录写在 `~/.flutter-titrator-env/manifest.txt`，卸载时依赖它。
+
+它不做什么：不把用户加入 `dialout` 组，不处理 `brltty`（这两件事见 `docs/DEV_GUIDE.md` 3.1、3.2），不换 Gradle 镜像。
+
+常用选项：
+
+| 选项 | 作用 |
+|---|---|
+| `--dry-run`（`-n`） | 只预览，不执行 |
+| `--no-mirror` | 不用国内镜像 |
+| `--skip-system-upgrade` | Arch 系：跳过 `pacman -Syu` |
+| `--pacman-mirror-cn` | Arch 系：额外把 pacman 换成国内镜像 |
+| `--with-esp-idf` | 额外安装 ESP-IDF（见下面的过时点） |
+| `--create-project` | 创建一个新的 Flutter 工程（见下面的过时点） |
+| `--uninstall` | 卸载，配合下面几个选项 |
+| `--yes`（`-y`） | 卸载时不再询问，ASK 项也一并删除，慎用 |
+| `--purge-deps` / `--purge-jdk` / `--remove-project` | 卸载时连系统依赖 / JDK / 项目代码一起删 |
+| `--help`（`-h`） | 显示文件头里的用法 |
+
+还可以用环境变量覆盖默认值：`FLUTTER_VERSION`、`FORCE_VERSION=1`（已装的 Flutter 版本不同时强制切换）、`JDK_VERSION`、`ANDROID_PLATFORMS`、`ANDROID_BUILD_TOOLS`、`COMPILE_SDK`、`FLUTTER_HOME`、`ANDROID_HOME`、`ESP_IDF_VERSION`。
+
+卸载有三级安全策略：
+
+- AUTO：manifest 里记录的产物（Flutter、Android SDK、`~/.pub-cache`、rc 里的环境变量块、udev 规则），整体确认一次后删除。这些目录是整个删掉的，包括你在脚本之外放进去的东西。
+- ASK：扫描到的第三方 / 手动安装 / 系统包（例如 `~/.android`、`~/.espressif`、`~/esp/esp-idf`），逐项确认。
+- INFO：JDK、项目代码目录、已装的系统包、`plugdev` 组，只报告，不会自动删。
+
+卸载前务必先运行 `./tools/env_config.sh --uninstall --dry-run`，看清楚会删什么。`~/esp/esp-idf-v5.5.5` 不在它的扫描范围内，但这个 ESP-IDF 的工具链在 `~/.espressif`，会作为 ASK 项出现，不要确认删除它。
+
+和本仓库相比，脚本里已经过时的地方：
+
+- 文件头仍自称 `setup_flutter_env.sh`（早先的名字）；`--help` 的输出会把它替换成实际文件名。
+- 文件头和注释写的是“BLE / WiFi 通信”。`--create-project` 会另建一个新工程 `~/projects/titrator_app`，并加上 Wi-Fi / MQTT 相关的包（`mqtt_client`、`web_socket_channel`、`http`、`network_info_plus`、`connectivity_plus`、`nsd`）。本仓库的 `app/` 已经存在，只用 BLE，不需要这个选项，不要用它。
+- `--with-esp-idf` 的默认版本是 v5.3，而本仓库用 v5.5.5。`ESP_IDF_VERSION` 可以用环境变量覆盖（`ESP_IDF_VERSION=v5.5.5`），但安装目录写死为 `~/esp/esp-idf`，不是仓库文档里用的 `~/esp/esp-idf-v5.5.5`；它直接从 GitHub 克隆，丢弃 `install.sh` 的输出，还会装 direnv 并改 rc 文件。建议不用它，按 `docs/DEV_GUIDE.md` 第 5 节手动装 v5.5.5。
+- 完成时打印的提示里有 `flutter run -d linux`，而 `app/` 只有 android 平台，没有 Linux 桌面端。
+
+## 协作约定
+
+- `docs/protocol.md` 是 App 和固件之间唯一的契约：改协议先改文档，再改两端。
+- 滴定用到的常量在 `firmware/components/core/include/core/config.h`，`app/lib/sim/sim_titrator.dart` 里有一份镜像，两边必须保持一致。
+- 改了 `firmware/sdkconfig.defaults` 之后，先删除生成的 `firmware/sdkconfig` 再编译，否则新的默认值不会生效。
+- 提交信息用简短的英文祈使句概括主要改动，例如 `Add phone connection steps to the developer guide`；每完成一个阶段性任务就提交一次。
