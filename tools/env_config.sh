@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Flutter / ESP-IDF 开发环境 部署 + 智能卸载  v4
-#  适配项目：ESP32-S3 滴定仪上位机（Flutter Android App + BLE / WiFi 通信）
+#  Flutter / ESP-IDF 开发环境 部署 + 智能卸载  v5
+#  适配项目：ESP32-S3 滴定仪（Flutter Android App，BLE 通信；ESP-IDF 固件）
 #  支持：Ubuntu 22.04+ · CachyOS / Arch Linux / Manjaro
 #  设计：幂等可重跑 · 纯 CLI 不装 Android Studio · 国内镜像加速 · 分级安全卸载
 #
-#  ── 部署 ────────────────────────────────────────────────────────
-#    ./setup_flutter_env.sh                      标准安装
-#    ./setup_flutter_env.sh --create-project     顺便创建项目骨架
-#    ./setup_flutter_env.sh --with-esp-idf       顺便装 ESP-IDF
-#    ./setup_flutter_env.sh --no-mirror          不用国内镜像（海外网络）
-#    ./setup_flutter_env.sh --pacman-mirror-cn   Arch系：额外切 pacman 国内镜像
-#    ./setup_flutter_env.sh --skip-system-upgrade
-#    ./setup_flutter_env.sh --dry-run            只预览不执行
+#  ── 部署（在仓库根目录运行）────────────────────────────────────
+#    ./tools/env_config.sh                      标准安装
+#    ./tools/env_config.sh --create-project     顺便创建项目骨架（独立的纯 Android 工程）
+#    ./tools/env_config.sh --with-esp-idf       顺便装 ESP-IDF（默认 v5.5.5 → ~/esp/esp-idf-v5.5.5）
+#    ./tools/env_config.sh --no-mirror          不用国内镜像（海外网络）
+#    ./tools/env_config.sh --pacman-mirror-cn   Arch系：额外切 pacman 国内镜像
+#    ./tools/env_config.sh --skip-system-upgrade
+#    ./tools/env_config.sh --dry-run            只预览不执行
 #
 #  ── 卸载 ────────────────────────────────────────────────────────
-#    ./setup_flutter_env.sh --uninstall                智能扫描 + 交互确认
-#    ./setup_flutter_env.sh --uninstall --dry-run      ★ 强烈建议先跑这个
-#    ./setup_flutter_env.sh --uninstall --yes          无交互全删（★含第三方项）
-#    ./setup_flutter_env.sh --uninstall --purge-deps   连系统依赖一起卸
-#    ./setup_flutter_env.sh --uninstall --purge-jdk    连 JDK 一起卸（危险）
-#    ./setup_flutter_env.sh --uninstall --remove-project 连项目代码一起删（极危险）
+#    ./tools/env_config.sh --uninstall                智能扫描 + 交互确认
+#    ./tools/env_config.sh --uninstall --dry-run      ★ 强烈建议先跑这个
+#    ./tools/env_config.sh --uninstall --yes          无交互全删（★含第三方项）
+#    ./tools/env_config.sh --uninstall --purge-deps   连系统依赖一起卸
+#    ./tools/env_config.sh --uninstall --purge-jdk    连 JDK 一起卸（危险）
+#    ./tools/env_config.sh --uninstall --remove-project 连项目代码一起删（极危险）
 #
 #  卸载三级安全策略：
 #    [AUTO]  manifest 记录 = 本脚本装的产物 → 整体确认一次后删除
@@ -36,23 +36,29 @@ FLUTTER_VERSION="${FLUTTER_VERSION:-3.47.7}"
 FORCE_VERSION="${FORCE_VERSION:-0}"
 JDK_VERSION="${JDK_VERSION:-17}"
 # 两个都要装：permission_handler_android / reactive_ble_mobile 的最新版要求 compileSdk 37；
-# 而 connectivity_plus / network_info_plus / nsd_android 的 compileSdk 是 flutter.compileSdkVersion（3.47.7 里是 36）。
+# 而 shared_preferences_android 的 compileSdk 是 flutter.compileSdkVersion（3.47.7 里是 36），flutter_local_notifications 也是 36。
 # 缺了 36，Gradle 会在第一次构建时自己下载安装，既慢又依赖网络和许可证，所以在这里先装好
 # SDK 37 的 sdkmanager 包名是 android-37.0（没有 android-37），见 5/8 里的符号链接
 ANDROID_PLATFORMS="${ANDROID_PLATFORMS:-android-36 android-37.0}"
 # build-tools 36.0.0 不能去掉：AGP 9.1.0 的默认 build-tools 就是它，缺了 Gradle 会自己再下一遍
 ANDROID_BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-36.0.0}"
 COMPILE_SDK="${COMPILE_SDK:-37}"
-# --create-project 时 flutter pub add 的包。BLE: flutter_reactive_ble · 权限: permission_handler · 状态: flutter_riverpod
-# WiFi: http / web_socket_channel（和 ESP32 的 HTTP、WebSocket 服务通信）· network_info_plus / connectivity_plus（读 WiFi 状态）
-# nsd（mDNS 发现设备）· mqtt_client（经 MQTT broker 通信）。不需要的包可以用环境变量覆盖，例如 FLUTTER_PACKAGES="flutter_reactive_ble"
-FLUTTER_PACKAGES="${FLUTTER_PACKAGES:-flutter_reactive_ble flutter_riverpod permission_handler mqtt_client web_socket_channel http network_info_plus connectivity_plus nsd}"
-FLUTTER_DEV_PACKAGES="${FLUTTER_DEV_PACKAGES:-flutter_lints}"
+# --create-project 时 flutter pub add 的包，默认是 app/ 现在用的这些。BLE: flutter_reactive_ble · 状态: flutter_riverpod
+# 权限: permission_handler · 图表: fl_chart · 本地存储: shared_preferences · 通知: flutter_local_notifications · 格式化: intl
+# 开发依赖 flutter_lints / fake_async；flutter_localizations 是 Flutter SDK 自带的包，要用 --sdk=flutter 单独加。
+# 都可以用环境变量覆盖，例如 FLUTTER_PACKAGES="flutter_reactive_ble"
+# 下面是早期的 Wi-Fi / MQTT 方案用的包，本项目没有采用，暂时留作参考
+# FLUTTER_PACKAGES="${FLUTTER_PACKAGES:-flutter_reactive_ble flutter_riverpod permission_handler mqtt_client web_socket_channel http network_info_plus connectivity_plus nsd}"
+FLUTTER_PACKAGES="${FLUTTER_PACKAGES:-flutter_reactive_ble flutter_riverpod permission_handler fl_chart shared_preferences flutter_local_notifications intl}"
+FLUTTER_DEV_PACKAGES="${FLUTTER_DEV_PACKAGES:-flutter_lints fake_async}"
+FLUTTER_SDK_PACKAGES="${FLUTTER_SDK_PACKAGES:-flutter_localizations}"
 FLUTTER_HOME="${FLUTTER_HOME:-$HOME/development/flutter}"
 ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 PROJECT_NAME="${PROJECT_NAME:-titrator_app}"
 PROJECT_DIR="${PROJECT_DIR:-$HOME/projects/$PROJECT_NAME}"
-ESP_IDF_VERSION="${ESP_IDF_VERSION:-v5.3}"
+ESP_IDF_VERSION="${ESP_IDF_VERSION:-v5.5.5}"
+# 卸载部分在部署部分之前运行，所以要在这里定义
+IDF_HOME="${IDF_HOME:-$HOME/esp/esp-idf-$ESP_IDF_VERSION}"
 
 USE_MIRROR=1; PACMAN_MIRROR_CN=0; WITH_ESP_IDF=0; CREATE_PROJECT=0
 SKIP_SYSUPGRADE=0; DRY_RUN=0
@@ -115,7 +121,7 @@ while [[ $# -gt 0 ]]; do
     --purge-deps) PURGE_DEPS=1; shift ;;
     --purge-jdk) PURGE_JDK=1; shift ;;
     --remove-project) REMOVE_PROJECT=1; shift ;;
-    --help|-h) awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0" | sed "s#setup_flutter_env\.sh#${0##*/}#g"; exit 0 ;;
+    --help|-h) awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"; exit 0 ;;
     *) die "未知参数: $1（--help 查看用法）" ;;
   esac
 done
@@ -328,7 +334,7 @@ SCAN_CAND=(
   "$ANDROID_HOME" "$HOME/Android/Sdk" "$HOME/android-sdk" "$HOME/Android/android-sdk"
   "/opt/android-sdk" "/opt/android-sdk-linux" "/usr/lib/android-sdk" "/usr/share/android-sdk"
   # ★ 不再扫 "$HOME/esp" 整个目录（里面可能有你自己的其它工程）
-  "$HOME/esp/esp-idf" "$HOME/esp-idf" "/opt/esp/idf" "/opt/esp-idf" "/usr/local/esp-idf"
+  "$IDF_HOME" "$HOME/esp/esp-idf" "$HOME/esp-idf" "/opt/esp/idf" "/opt/esp-idf" "/usr/local/esp-idf"
   "$HOME/.espressif" "$HOME/.pub-cache" "$HOME/.android"
   "/opt/android-studio" "/opt/android-studio-linux" "$HOME/android-studio"
   "/usr/local/android-studio"
@@ -362,7 +368,7 @@ if [[ -f /etc/udev/rules.d/51-android.rules ]]; then
   add_t AUTO udev "/etc/udev/rules.d/51-android.rules" "adb udev 规则"
 fi
 if [[ -e "$STATE_DIR" ]]; then add_t AUTO dir "$STATE_DIR" "本脚本的状态/manifest 目录"; fi
-for f in "$HOME/esp/esp-idf/.envrc" "$HOME/.envrc"; do
+for f in "$IDF_HOME/.envrc" "$HOME/esp/esp-idf/.envrc" "$HOME/.envrc"; do
   [[ -f "$f" ]] || continue
   # ★ ~/.envrc 是全局 direnv 配置，降级为 ASK（绝不无脑删）
   if grep -q 'export.sh' "$f" 2>/dev/null; then
@@ -496,6 +502,7 @@ if [[ $PURGE_DEPS -eq 1 ]]; then
   if [[ $ASSUME_YES -eq 1 ]] || ask "卸载系统依赖（git/curl/clang/cmake/gtk3/android-tools 等）？"; then
     if [[ "$PKG" == "pacman" ]]; then
       # Arch 没有 lzma 这个包（xz 已取代），列在里面会 "target not found"；
+      # clang / pkgconf / gtk3 现在不装了，但旧版本脚本装过，所以清单里保留；
       # 另外 pacman 事务是整体的：只要有一个被别的包依赖（curl、xz 几乎必然），整条命令全部失败，所以逐个卸
       DEPS=(git curl unzip xz zip clang cmake ninja pkgconf gtk3 android-tools)
       for d in "${DEPS[@]}"; do
@@ -520,7 +527,7 @@ fi
 # ─────────────────────────── 验证 ───────────────────────────
 step "4/5 验证清理结果"
 LEFT=0
-for p in "$FLUTTER_HOME" "$ANDROID_HOME" "$HOME/esp/esp-idf" "$HOME/.espressif" "$HOME/.pub-cache" \
+for p in "$FLUTTER_HOME" "$ANDROID_HOME" "$IDF_HOME" "$HOME/esp/esp-idf" "$HOME/.espressif" "$HOME/.pub-cache" \
          "$HOME/fvm" "/usr/lib/flutter" "/opt/flutter" "/opt/android-studio"; do
   if [[ -e "$p" ]]; then warn "残留: $p"; LEFT=$((LEFT+1)); fi
 done
@@ -605,11 +612,12 @@ esac
 
 MANIFEST_PKGS=()
 step "1/8 安装系统依赖"
+# 本项目只做 Android，不需要 Flutter Linux 桌面的 clang / pkg-config / gtk3；
+# cmake / ninja / gcc 留着，给固件的主机测试（firmware/test/host）和 ESP-IDF 用
 if [[ "$PKG" == "apt" ]]; then
-  DEPS=(git curl unzip xz-utils zip ca-certificates clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev g++ build-essential)
+  DEPS=(git curl unzip xz-utils zip ca-certificates cmake ninja-build g++ build-essential)
 else
-  # xz 已提供 liblzma.so；Arch 没有叫 liblzma 的包，写进去 pacman 会 "target not found" 导致整个脚本在这一步退出
-  DEPS=(git curl unzip xz zip ca-certificates base-devel clang cmake ninja pkgconf gtk3 android-tools)
+  DEPS=(git curl unzip xz zip ca-certificates base-devel cmake ninja android-tools)
 fi
 if [[ $WITH_ESP_IDF -eq 1 ]]; then
   # ESP-IDF install.sh 的前置依赖。apt 用了 --no-install-recommends，python3-venv 不会被顺带装上，缺它 install.sh 必挂
@@ -806,14 +814,15 @@ export PATH="$FLUTTER_HOME/bin:$PATH"
 if ! git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$FLUTTER_HOME"; then
   run git config --global --add safe.directory "$FLUTTER_HOME" 2>/dev/null || true
 fi
-run flutter config --enable-linux-desktop >/dev/null 2>&1 || true
+# App 只做 Android：关掉 Linux 桌面，flutter doctor 也就不会再抱怨没装 clang / gtk 之类的 Linux 工具链
+run flutter config --no-enable-linux-desktop >/dev/null 2>&1 || true
 run flutter config --no-analytics >/dev/null 2>&1 || true
 info "预缓存引擎（首次 2-5 分钟）..."
-run flutter precache --android --linux >/dev/null 2>&1 || warn "precache 有告警，通常不影响"
+run flutter precache --android >/dev/null 2>&1 || warn "precache 有告警，通常不影响"
 ok "Flutter 初始化完成"
 
-# Flutter 模板的 compileSdk 是 flutter.compileSdkVersion（3.47 里是 36），而上面的 plugin 要求 37；
-# 不改的话 :app:checkDebugAarMetadata 直接失败，而且 36 的 platform 已经不装了
+# Flutter 模板的 compileSdk 是 flutter.compileSdkVersion（3.47 里是 36），而 permission_handler / flutter_reactive_ble 要求 37；
+# 不改的话 :app:checkDebugAarMetadata 直接失败（36 的 platform 默认也装了，但 App 自己的 compileSdk 必须不低于依赖要求的最高值）
 patch_compile_sdk(){  # patch_compile_sdk <项目目录>
   local kts="$1/android/app/build.gradle.kts" props="$1/android/gradle.properties"
   if grep -q 'compileSdk = flutter\.compileSdkVersion' "$kts" 2>/dev/null; then
@@ -829,7 +838,8 @@ patch_compile_sdk(){  # patch_compile_sdk <项目目录>
 }
 
 pub_add_deps(){  # pub_add_deps <项目目录>
-  ( cd "$1" && flutter pub add $FLUTTER_PACKAGES && flutter pub add --dev $FLUTTER_DEV_PACKAGES )
+  ( cd "$1" && flutter pub add $FLUTTER_PACKAGES && flutter pub add --dev $FLUTTER_DEV_PACKAGES \
+      && { [[ -z "$FLUTTER_SDK_PACKAGES" ]] || flutter pub add $FLUTTER_SDK_PACKAGES --sdk=flutter; } )
 }
 
 if [[ $CREATE_PROJECT -eq 1 ]]; then
@@ -837,12 +847,13 @@ if [[ $CREATE_PROJECT -eq 1 ]]; then
   run mkdir -p "$(dirname "$PROJECT_DIR")"
   if [[ -d "$PROJECT_DIR" ]]; then warn "已存在，跳过: $PROJECT_DIR"
   else
-    if run flutter create --org com.lab --project-name "$PROJECT_NAME" --platforms=android,linux "$PROJECT_DIR"; then
+    if run flutter create --org com.lab --project-name "$PROJECT_NAME" --platforms=android "$PROJECT_DIR"; then
       # ★ 修复：原来子 shell 失败会直接冒泡 set -e，整个部署被中断
       #   dry-run 下项目目录并不存在，cd 必败 → 会错误地报"pub add 失败"，所以单独走预览分支
       if [[ $DRY_RUN -eq 1 ]]; then
         run flutter pub add $FLUTTER_PACKAGES
         run flutter pub add --dev $FLUTTER_DEV_PACKAGES
+        if [[ -n "$FLUTTER_SDK_PACKAGES" ]]; then run flutter pub add $FLUTTER_SDK_PACKAGES --sdk=flutter; fi
         info "[dry-run] android/app/build.gradle.kts: compileSdk = $COMPILE_SDK；android/gradle.properties: android.suppressUnsupportedCompileSdk=$COMPILE_SDK"
       else
         # 与 pub add 是否成功无关，先改：这是项目能用已装的 SDK 37 编译的前提
@@ -866,8 +877,7 @@ else step "8/8 跳过项目创建（--create-project 可启用）"; fi
 
 if [[ $WITH_ESP_IDF -eq 1 ]]; then
   step "[可选] 安装 ESP-IDF $ESP_IDF_VERSION"
-  IDF_HOME="$HOME/esp/esp-idf"
-  run mkdir -p "$HOME/esp"
+  run mkdir -p "$(dirname "$IDF_HOME")"
   if [[ -d "$IDF_HOME/.git" ]]; then ok "已存在: $IDF_HOME"
   else
     run git clone -b "$ESP_IDF_VERSION" --recursive --depth 1 https://github.com/espressif/esp-idf.git "$IDF_HOME" \
@@ -918,10 +928,11 @@ ${G}${B} ✅ 环境部署完成${N}   ${PRETTY_NAME:-${ID}}
 
 ${B}立即生效：${N}  exec ${LOGIN_SHELL}
 ${B}验证：${N}      flutter doctor -v  /  flutter devices
-${B}常用：${N}      flutter run -d linux    # 主开发轨（Mock，最快热重载）
-                   flutter run -d <真机ID>  # BLE 集成才需真机
-                   flutter analyze        # 提交前必跑
-${B}卸载：${N}      ./${0##*/} --uninstall --dry-run   # 先预览
+${B}常用：${N}      cd app
+            flutter run -t lib/main_sim.dart   # 无硬件模拟器版本（需连手机）
+            flutter run -d <真机ID>            # 连真实滴定仪（BLE）
+            flutter analyze && flutter test    # 提交前必跑
+${B}卸载：${N}      $0 --uninstall --dry-run   # 先预览
 
 ${B}版本：${N} Flutter $FLUTTER_VERSION / JDK $JDK_VERSION ($JDK_PKG) / Android SDK @ $ANDROID_HOME
 ${G}${B}════════════════════════════════════════════════════════════${N}

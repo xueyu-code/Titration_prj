@@ -92,12 +92,12 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 
 ## 环境部署脚本 tools/env_config.sh
 
-用来在一台干净的 Linux 机器上一次装好 Flutter、Android SDK 和 JDK（不装 Android Studio），可选再装 ESP-IDF；也带卸载功能。约 930 行 bash，不要用 root 运行，需要 `sudo`。
+用来在一台干净的 Linux 机器上一次装好 Flutter、Android SDK 和 JDK（不装 Android Studio），可选再装 ESP-IDF；也带卸载功能。约 940 行 bash，不要用 root 运行，需要 `sudo`。
 
 它做什么：
 
 - 支持 Ubuntu 22.04 / 24.04，以及 CachyOS / Arch / Manjaro；x86_64 和 aarch64。其他发行版和 Ubuntu 其他版本会直接退出。
-- 装系统依赖（git、cmake、ninja、clang、gtk3 等）和 OpenJDK 17。
+- 装系统依赖（git、curl、unzip、xz、zip、cmake、ninja、gcc 等；cmake、ninja、gcc 留给固件的主机测试和 ESP-IDF 用）和 OpenJDK 17。本项目只做 Android，所以不再装 Flutter Linux 桌面需要的 clang、pkg-config、gtk3，并且执行 `flutter config --no-enable-linux-desktop`，`flutter precache` 也只下载 Android 的部分。
 - 装 Flutter（默认 3.47.7，克隆到 `~/development/flutter`），装 Android cmdline-tools、platform-tools、platforms（默认 `android-36` 和 `android-37.0`，并给 37.0 建 `android-37` 符号链接）、build-tools 36.0.0 到 `~/Android/Sdk`，接受协议。
 - 默认使用国内镜像（Flutter 源码用清华镜像，写入 `PUB_HOSTED_URL` 和 `FLUTTER_STORAGE_BASE_URL` 指向 flutter-io.cn）；`--no-mirror` 改用官方源。
 - 装 adb 的 udev 规则（只有 Google `18d1` 和树莓派 `2e8a` 两个厂商 ID，别的手机见 `docs/DEV_GUIDE.md` 3.3），把用户加入 `plugdev`。
@@ -114,29 +114,27 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 | `--no-mirror` | 不用国内镜像 |
 | `--skip-system-upgrade` | Arch 系：跳过 `pacman -Syu` |
 | `--pacman-mirror-cn` | Arch 系：额外把 pacman 换成国内镜像 |
-| `--with-esp-idf` | 额外安装 ESP-IDF（见下面的过时点） |
-| `--create-project` | 创建一个新的 Flutter 工程（见下面的过时点） |
+| `--with-esp-idf` | 额外安装 ESP-IDF（默认 v5.5.5，装到 `~/esp/esp-idf-v5.5.5`，见下面的说明） |
+| `--create-project` | 另建一个只含 Android 平台的新 Flutter 工程（见下面的说明） |
 | `--uninstall` | 卸载，配合下面几个选项 |
 | `--yes`（`-y`） | 卸载时不再询问，ASK 项也一并删除，慎用 |
 | `--purge-deps` / `--purge-jdk` / `--remove-project` | 卸载时连系统依赖 / JDK / 项目代码一起删 |
 | `--help`（`-h`） | 显示文件头里的用法 |
 
-还可以用环境变量覆盖默认值：`FLUTTER_VERSION`、`FORCE_VERSION=1`（已装的 Flutter 版本不同时强制切换）、`JDK_VERSION`、`ANDROID_PLATFORMS`、`ANDROID_BUILD_TOOLS`、`COMPILE_SDK`、`FLUTTER_HOME`、`ANDROID_HOME`、`ESP_IDF_VERSION`。
+还可以用环境变量覆盖默认值：`FLUTTER_VERSION`、`FORCE_VERSION=1`（已装的 Flutter 版本不同时强制切换）、`JDK_VERSION`、`ANDROID_PLATFORMS`、`ANDROID_BUILD_TOOLS`、`COMPILE_SDK`、`FLUTTER_HOME`、`ANDROID_HOME`、`ESP_IDF_VERSION`、`IDF_HOME`（ESP-IDF 的安装目录，默认 `~/esp/esp-idf-$ESP_IDF_VERSION`），以及 `--create-project` 用的 `FLUTTER_PACKAGES`、`FLUTTER_DEV_PACKAGES`、`FLUTTER_SDK_PACKAGES`（用 `--sdk=flutter` 添加的 SDK 自带包，默认 `flutter_localizations`）。
 
 卸载有三级安全策略：
 
 - AUTO：manifest 里记录的产物（Flutter、Android SDK、`~/.pub-cache`、rc 里的环境变量块、udev 规则），整体确认一次后删除。这些目录是整个删掉的，包括你在脚本之外放进去的东西。
-- ASK：扫描到的第三方 / 手动安装 / 系统包（例如 `~/.android`、`~/.espressif`、`~/esp/esp-idf`），逐项确认。
+- ASK：扫描到的第三方 / 手动安装 / 系统包（例如 `~/.android`、`~/.espressif`、`~/esp/esp-idf-v5.5.5`、旧版本脚本用过的 `~/esp/esp-idf`），逐项确认。
 - INFO：JDK、项目代码目录、已装的系统包、`plugdev` 组，只报告，不会自动删。
 
-卸载前务必先运行 `./tools/env_config.sh --uninstall --dry-run`，看清楚会删什么。`~/esp/esp-idf-v5.5.5` 不在它的扫描范围内，但这个 ESP-IDF 的工具链在 `~/.espressif`，会作为 ASK 项出现，不要确认删除它。
+卸载前务必先运行 `./tools/env_config.sh --uninstall --dry-run`，看清楚会删什么。`~/esp/esp-idf-v5.5.5` 和它的工具链 `~/.espressif` 现在都会作为 ASK 项出现（只有脚本自己用 `--with-esp-idf` 克隆的 ESP-IDF 才会记进 manifest 成为 AUTO）；想保留固件工具链就不要确认删除它们，也不要加 `--yes`。
 
-和本仓库相比，脚本里已经过时的地方：
+和本仓库的关系：
 
-- 文件头仍自称 `setup_flutter_env.sh`（早先的名字）；`--help` 的输出会把它替换成实际文件名。
-- 文件头和注释写的是“BLE / WiFi 通信”。`--create-project` 会另建一个新工程 `~/projects/titrator_app`，并加上 Wi-Fi / MQTT 相关的包（`mqtt_client`、`web_socket_channel`、`http`、`network_info_plus`、`connectivity_plus`、`nsd`）。本仓库的 `app/` 已经存在，只用 BLE，不需要这个选项，不要用它。
-- `--with-esp-idf` 的默认版本是 v5.3，而本仓库用 v5.5.5。`ESP_IDF_VERSION` 可以用环境变量覆盖（`ESP_IDF_VERSION=v5.5.5`），但安装目录写死为 `~/esp/esp-idf`，不是仓库文档里用的 `~/esp/esp-idf-v5.5.5`；它直接从 GitHub 克隆，丢弃 `install.sh` 的输出，还会装 direnv 并改 rc 文件。建议不用它，按 `docs/DEV_GUIDE.md` 第 5 节手动装 v5.5.5。
-- 完成时打印的提示里有 `flutter run -d linux`，而 `app/` 只有 android 平台，没有 Linux 桌面端。
+- `--create-project` 会另建一个独立的新工程 `~/projects/titrator_app`，只含 Android 平台，依赖是 `app/` 现在用的那些（`flutter_reactive_ble`、`flutter_riverpod`、`permission_handler`、`fl_chart`、`shared_preferences`、`flutter_local_notifications`、`intl`，开发依赖 `flutter_lints`、`fake_async`，再加 SDK 自带的 `flutter_localizations`），并把 `compileSdk` 改成 37。它不会碰本仓库的 `app/`，而 `app/` 已经建好，所以日常用不到这个选项。脚本里早期 Wi-Fi / MQTT 方案的那串包（`mqtt_client`、`web_socket_channel`、`http`、`network_info_plus`、`connectivity_plus`、`nsd`）还留着，但已经注释掉，本项目没有采用，暂时留作参考。
+- `--with-esp-idf` 默认装 v5.5.5，克隆到 `~/esp/esp-idf-v5.5.5`，和仓库文档一致。但它仍然只从 GitHub 克隆（没有国内镜像），丢弃 `install.sh` 的输出（失败时只有一句笼统的警告），还会装 direnv、往 rc 文件里加 hook，并在 ESP-IDF 目录里写一个 `.envrc`。GitHub 慢或连不上时，按 `docs/DEV_GUIDE.md` 第 5 节手动装。
 
 ## 协作约定
 
