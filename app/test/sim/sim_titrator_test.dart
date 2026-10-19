@@ -768,6 +768,25 @@ void main() {
       });
     });
 
+    test('sync reports the state and the calibration in every mode', () {
+      final rig = Rig()..send(const CalSet(-57.92, 4.35));
+      final cal = {'evt': 'cal', 'slope': -57.92, 'offset': 4.35};
+      for (final (setup, mode) in [
+        (null, 'idle'),
+        (const StartTitration(10), 'titrating'),
+        (const Jog(Channel.ch1, Direction.dispense), 'moving'),
+      ]) {
+        if (setup != null) rig.send(setup);
+        rig.clear();
+        rig.send(const Sync());
+        expect(rig.raw, [
+          {'evt': 'state', 's': mode},
+          cal,
+        ]);
+        expect(rig.sim.mode.name, mode);
+      }
+    });
+
     test('the link going away stops titration and motion', () {
       final rig = Rig()..send(const StartTitration(10));
       rig.run(const Duration(seconds: 30), until: () => rig.doses.isNotEmpty);

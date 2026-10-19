@@ -31,6 +31,13 @@ static void emit_cal(const device_t *d)
     emit(d, &(evt_t){.kind = EVT_CAL, .cal = d->cal});
 }
 
+/* What a fresh connection needs to know: on subscribe and on `sync`. */
+static void emit_snapshot(const device_t *d)
+{
+    emit_state(d);
+    emit_cal(d);
+}
+
 /* ch < 0: an error without channel and direction. */
 static void emit_error(const device_t *d, err_code_t code, int8_t ch, dir_t dir, const char *msg)
 {
@@ -199,13 +206,15 @@ void device_on_write(device_t *d, const char *data, size_t len, uint32_t now_ms)
         CLOGI(TAG, "calibration slope %.2f, offset %.2f", (double)d->cal.slope, (double)d->cal.offset);
         emit_cal(d);
         break;
+    case CMD_SYNC:
+        emit_snapshot(d);
+        break;
     }
 }
 
 void device_on_subscribe(device_t *d)
 {
-    emit_state(d);
-    emit_cal(d);
+    emit_snapshot(d);
 }
 
 void device_on_disconnect(device_t *d)

@@ -85,13 +85,13 @@ class SimTitrator {
     microseconds: (stepMl / pumpMlPerSecond * 1e6).round(),
   );
 
-  static const _all = {'titrate', 'stop', 'move', 'jog', 'cal_set'};
+  static const _all = {'titrate', 'stop', 'move', 'jog', 'cal_set', 'sync'};
 
   /// Commands accepted per mode (protocol section 3).
   static const _accepts = {
     DeviceMode.idle: _all,
-    DeviceMode.titrating: {'stop', 'move', 'jog'},
-    DeviceMode.moving: {'stop', 'move', 'jog'},
+    DeviceMode.titrating: {'stop', 'move', 'jog', 'sync'},
+    DeviceMode.moving: {'stop', 'move', 'jog', 'sync'},
   };
 
   static void _discard(List<int> _) {}
@@ -171,10 +171,7 @@ class SimTitrator {
       _beaker = _Beaker(5.5 + _random.nextDouble() * 3.5, buffered: buffered);
 
   /// The app subscribed to EVT: report the state and the stored calibration.
-  void connected() {
-    _emitState();
-    _emitCal();
-  }
+  void connected() => _emitSnapshot();
 
   /// The link is gone: all motors stop.
   void disconnected() => _idle();
@@ -232,6 +229,8 @@ class SimTitrator {
         _calSlope = slope;
         _calOffset = offset;
         _emitCal();
+      case 'sync':
+        _emitSnapshot();
     }
   }
 
@@ -417,6 +416,12 @@ class SimTitrator {
 
   void _emitCal() =>
       _emit({'evt': 'cal', 'slope': _calSlope, 'offset': _calOffset});
+
+  /// What a fresh connection needs to know: on connect and on `sync`.
+  void _emitSnapshot() {
+    _emitState();
+    _emitCal();
+  }
 
   void _error(String code, {Channel? channel, Direction? direction}) => _emit({
     'evt': 'error',

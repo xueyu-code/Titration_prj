@@ -133,6 +133,47 @@ void main() {
     expect(events, [isA<PhReading>(), isA<ModeChanged>()]);
   });
 
+  group('sync', () {
+    List<Object?> sent() => [
+      for (final (_, value) in ble.writes) jsonDecode(utf8.decode(value)),
+    ];
+
+    test('the first notification asks for the state once', () async {
+      await connected();
+      expect(ble.writes, isEmpty);
+
+      ble.notifications.add(utf8.encode('{"evt":"ph","v":6.98}'));
+      ble.notifications.add(utf8.encode('{"evt":"ph","v":6.99}'));
+      await settle();
+      expect(sent(), [
+        {'cmd': 'sync'},
+      ]);
+      expect(events, [isA<PhReading>(), isA<PhReading>()]);
+    });
+
+    test('every connection asks again', () async {
+      await connected();
+      ble.notifications.add(utf8.encode('{"evt":"ph","v":6.98}'));
+      await settle();
+      await connected();
+      ble.notifications.add(utf8.encode('{"evt":"ph","v":6.98}'));
+      await settle();
+      expect(sent(), [
+        {'cmd': 'sync'},
+        {'cmd': 'sync'},
+      ]);
+    });
+
+    test('a failing sync write leaves the link up', () async {
+      await connected();
+      ble.writeError = Exception('gatt');
+      ble.notifications.add(utf8.encode('{"evt":"ph","v":6.98}'));
+      await settle();
+      expect(statuses.last, LinkStatus.connected);
+      expect(events, [isA<PhReading>()]);
+    });
+  });
+
   group('connect: MTU', () {
     /// Connecting fails with [LinkFailure.failed] and leaves nothing open.
     Future<void> expectRejected() async {

@@ -66,6 +66,15 @@ final class StopAll extends Command {
   Map<String, Object> toJson() => {'cmd': 'stop'};
 }
 
+/// Asks for the current [ModeChanged] and [CalApplied], in that order.
+/// Accepted in every mode and changes nothing.
+final class Sync extends Command {
+  const Sync();
+
+  @override
+  Map<String, Object> toJson() => {'cmd': 'sync'};
+}
+
 /// Single fixed step (tap).
 final class Move extends Command {
   const Move(this.channel, this.direction);

@@ -1,5 +1,5 @@
 /*
- * Wire format of docs/protocol.md v3: one UTF-8 JSON object per CMD write or
+ * Wire format of docs/protocol.md v4: one UTF-8 JSON object per CMD write or
  * EVT notification. Parsing uses cJSON (robust against arbitrary input);
  * encoding uses snprintf (fixed shapes, no heap, exact decimals).
  */
@@ -20,6 +20,7 @@ typedef enum {
     CMD_MOVE,
     CMD_JOG,
     CMD_CAL_SET,
+    CMD_SYNC,
 } cmd_kind_t;
 
 typedef struct {

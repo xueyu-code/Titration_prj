@@ -83,6 +83,15 @@ static void test_parse_stop(void)
     TEST_ASSERT_EQUAL(CMD_STOP, cmd.kind);
 }
 
+/* {"cmd":"sync"} */
+static void test_parse_sync(void)
+{
+    cmd_t cmd;
+
+    assert_parses("{\"cmd\":\"sync\"}", &cmd);
+    TEST_ASSERT_EQUAL(CMD_SYNC, cmd.kind);
+}
+
 /* ch 1/2 -> index 0/1, dir "in"/"out" */
 static void test_parse_move_and_jog(void)
 {
@@ -546,6 +555,7 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_parse_titrate);
     RUN_TEST(test_parse_stop);
+    RUN_TEST(test_parse_sync);
     RUN_TEST(test_parse_move_and_jog);
     RUN_TEST(test_parse_cal_set);
     RUN_TEST(test_parse_ignores_unknown_fields);

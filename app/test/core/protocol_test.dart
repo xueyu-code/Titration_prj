@@ -12,6 +12,7 @@ void main() {
     test('encode as the JSON of docs/protocol.md', () {
       expect(wire(const StartTitration(7)), {'cmd': 'titrate', 'target': 7.0});
       expect(wire(const StopAll()), {'cmd': 'stop'});
+      expect(wire(const Sync()), {'cmd': 'sync'});
       expect(wire(const Move(Channel.ch1, Direction.aspirate)), {
         'cmd': 'move',
         'ch': 1,

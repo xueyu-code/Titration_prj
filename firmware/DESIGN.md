@@ -1,6 +1,6 @@
 # 滴定仪固件设计
 
-版本 0.1，对应协议 v3（`docs/protocol.md`）。协议是 App 和固件之间唯一的契约，本文与协议冲突时以协议为准，并且应先修改协议。
+版本 0.1，对应协议 v4（`docs/protocol.md`）。协议是 App 和固件之间唯一的契约，本文与协议冲突时以协议为准，并且应先修改协议。
 
 标记说明：**[待确认]** 表示取决于还没到手的硬件或还没确认的接线；**[待实测]** 表示要在联调时测量后再定。完整清单见第 18 节。
 
@@ -328,6 +328,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 | idle | `cal_set` | 保存到 NVS 并立即生效（保存失败也生效，记日志） | `cal` |
 | 任意 | `stop` | 停下当前运动，结束滴定 | 状态有变化时 `state: idle` |
 | 任意 | `move` / `jog` | 见下 | — |
+| 任意 | `sync` | 不改变任何状态 | `state`（当前状态，不论有没有变化），再 `cal` |
 | titrating / moving | `titrate` / `cal_set` | — | `error: busy` |
 
 **`move` / `jog`**
@@ -354,7 +355,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 | jog 截止时间已过 | `device_tick` 检测到 | `state: idle`（正常结束，不发 error） |
 | 断开连接 | 停下一切 | `state: idle`（此时没有接收方，丢弃无妨） |
 
-`state` 只在发生变化时发送，另外在订阅时发送一次（随后发 `cal`）。`ph` 事件每收到一个有效采样发一次，与状态无关。
+`state` 只在发生变化时发送，另外在订阅时和收到 `sync` 时各发送一次（随后发 `cal`）。订阅时的那一次在 Android 上收不到（协议 v4 的变化），App 靠 `sync` 取得状态。`ph` 事件每收到一个有效采样发一次，与状态无关。
 
 ---
 
@@ -373,7 +374,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 
 ## 8. 滴定控制环
 
-与协议第 4 节和 `app/lib/sim/sim_titrator.dart`（v3）的 `_control` / `_decide` 一一对应，常量同名同值（第 12 节）。
+与协议第 4 节和 `app/lib/sim/sim_titrator.dart`（v4）的 `_control` / `_decide` 一一对应，常量同名同值（第 12 节）。
 
 1. **等稳定**：滴定开始、每剂**送完**、每次"保持"决定之后，重新开始等待。`SETTLE_SKIP_MS` 内的读数丢弃；之后把读数放进长度为 `SETTLE_N` 的窗口。窗口满且极差 ≤ `SETTLE_SPAN_PH`，或者等待已达 `SETTLE_MAX_MS`，就用**窗口平均值**做决定。
 2. **保持带**：|target − pH| ≤ `HOLD_TOL_PH` 时不加液，重新等待。完成由 App 判定（连续 5 s 在 ±0.05 以内，且这 5 s 内读数极差 ≤ 0.03，与 `SETTLE_SPAN_PH` 相同），之后 App 发送 `stop`。
@@ -518,7 +519,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 
 ## 15. 日志和版本
 
-- 版本号：`firmware/version.txt`（现在是 `0.1.0`），由 IDF 写入 `esp_app_desc`。启动时打印一行 `titrator firmware 0.1.0, protocol v3, ESP-IDF v5.5.5`。发布时改 `version.txt`，不使用 git describe（仓库里还有 App 代码，提交哈希对固件没有意义）。
+- 版本号：`firmware/version.txt`（现在是 `0.1.0`），由 IDF 写入 `esp_app_desc`。启动时打印一行 `titrator firmware 0.1.0, protocol v4, ESP-IDF v5.5.5`。发布时改 `version.txt`，不使用 git describe（仓库里还有 App 代码，提交哈希对固件没有意义）。
 - 日志级别：默认 INFO，最高编译到 DEBUG（可以在运行时用 `esp_log_level_set` 对单个 tag 打开）；NimBLE 设为 WARNING。
 - tag：`main`、`ble`、`stepper`、`ph_adc`、`cal`、`device`、`titr`。
 - INFO 级别要记录的内容：状态变化；每次滴定决策（pH、误差、通道、µL、换向次数）；每次运动的结束原因和位置；电极异常的进入和退出；标定参数的保存；连接、断开和 MTU。DEBUG 级别：每条命令原文、每个 `V_adc` 读数。WARN 级别：队列满、通知失败、NVS 失败、PCNT 计数与预期不符。
@@ -601,13 +602,15 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 
 ## 19. 上板验证清单
 
-下面这些都还没有在硬件上验证过。除特别说明外，用一块只有 1.05 V 分压（见第 1.3 节）、没有接电机的裸板即可。
+除标了 ✅ 的项以外，都还没有在硬件上验证过。除特别说明外，用一块只有 1.05 V 分压（见第 1.3 节）、没有接电机的裸板即可。
+
+✅ 的项是 2026-10-19 在 ESP32-S3-DevKitC-1 N16R8 裸板上验证的（GPIO1 悬空，所以一直处于 `sensor` 异常，`ph` 读数没有意义）。手机是荣耀 AAK-AN00（Android 16）装 release APK；另一端是 PC 上用 BlueZ 的 D-Bus 接口直接读写 GATT。
 
 **ADC 与标定存储**
 - GPIO1 接 1.05 V 分压：日志里的 `V_adc` 稳定。
 - 第 1.3 节的验收测量（0.7–1.3 V 之间约 10 个电压点，直线拟合残差 ≤ 1.2 mV）；不合格就换 ADS1115。
 - 接上 PH-4502C 模块后，拔掉电极、短接 BNC、拔掉 Po 线，分别记录 `V_adc`，确定 `SENSOR_RAIL_LO_MV` / `SENSOR_RAIL_HI_MV`（第 9 节）。
-- `cal_store`：`cal_set` 写入后重启，标定仍然生效。
+- ✅ `cal_store`：`cal_set` 写入后重启，标定仍然生效（见下面 BLE 一组）。
 
 **步进（不接驱动）**
 - 命令 1、121、1212、23200 步，PCNT 计数都与命令完全相等。
@@ -616,11 +619,12 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 - 用逻辑分析仪或示波器检查启停时没有多余的边沿（重点：第一个周期使用新的周期值、撤掉强制电平时没有上升沿）。
 
 **BLE**
-- App 能扫描到 `Titrator-XXXX`，排在列表最前面；连接后收到 `state` 和 `cal`，`ph` 以 2 Hz 上报。
-- `cal_set` 保存后重启，仍然生效。
-- 断开后能立即重新连上。
-- 写入一个 101 B 的命令，回 `bad_cmd`。
-- 用 nRF Connect 检查广播包是 21 B、设备名在扫描响应里。
+- ✅ App 能扫描到 `Titrator-791A`，排在列表最前面；连接后模式显示“空闲”，`ph` 以 2 Hz 上报（手机日志里 `onNotify` 间隔约 500 ms；PC 端 9 s 收到 18 条）。
+  - 第一次验证时 App 一直显示模式“未知”：订阅时设备发的 `state` 和 `cal`，手机都没交给 App。PC 端订阅能收到这两条，所以不是固件的问题。原因有两层：RxAndroidBle 先写 CCCD，写完才调用 `setCharacteristicNotification` 在系统里登记，紧跟着到达的 `state` 被系统丢弃（手机日志里订阅后只有 1 次 `onNotify`）；flutter_reactive_ble 5.6.0 的 Dart 层要等订阅完成才开始收数据（`connected_device_operation.dart` 里的 `asyncExpand`），又丢了 `cal`。为此协议升到 v4，加了 `sync` 命令，App 收到每次连接的第一条通知后发一次。
+- ✅ `cal_set` 保存后重启，仍然生效：PC 端写 `cal_set -57.92 / 4.35`，用 RTS 复位后重连，订阅和 `sync` 回的都是 `-57.92 / 4.35`；之后改回出厂值 `-59.16 / 0`。这次是复位，不是断电，不过两者都是从 NVS 重新读取。
+- ✅ 断开后能立即重新连上：App 里连续断开、重连 3 次，每次都显示“空闲”。
+- ✅ 写入 101 B 的命令，回 `bad_cmd`（`msg: "too long"`）；正好 100 B 的命令被接受。
+- 用 nRF Connect 检查广播包是 21 B、设备名在扫描响应里。（PC 扫描已经看到设备名和 Service UUID，但没有看包长。）
 
 **任务栈**
 - 做完一次滴定和一次 `cal_set` 后，查看各任务的栈高水位（代码里现在没有打印，需要临时加日志调用 `uxTaskGetStackHighWaterMark`），确认余量够用。

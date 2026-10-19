@@ -81,12 +81,15 @@ Verified without hardware: all host tests, including the closed loop
 (buffered samples converge, unbuffered ones stop with `no_converge`), and a
 warning-free `idf.py build`.
 
+Verified on a bare board on 2026-10-19 (DESIGN §19): the app finds
+`Titrator-XXXX`, gets the state through `sync` and `ph` at 2 Hz, reconnects,
+`cal_set` survives a reset, and a 101 B command gets `bad_cmd`.
+
 Not yet verified, needs the board (details in DESIGN §1.3, §4 and §19):
 
 - ADC: steady `V_adc` on a 1.05 V divider, the linearity measurement over
   0.7–1.3 V, and the sensor-fault rail thresholds.
 - Stepper: PCNT equals the commanded steps, the limit pin stops a dispense
   within two steps, and there are no stray edges at start and stop.
-- BLE: the app finds `Titrator-XXXX`, gets `state`, `cal` and `ph` at 2 Hz,
-  `cal_set` survives a reboot, and a reconnect works.
+- BLE: the advertising packet is 21 B with the name in the scan response.
 - Task stack high-water marks after a titration and a `cal_set`.

@@ -1,6 +1,8 @@
-# 滴定仪 BLE 通信协议 v3
+# 滴定仪 BLE 通信协议 v4
 
 App 与 ESP32-S3 固件之间的唯一约定。改协议先改本文档，再改两端代码。
+
+v4 相对 v3 的变化：新增 `sync` 命令，App 用它在连接后取得 `state` 和 `cal`（第 1 节）。订阅时推送的那一次在 Android 上会丢：系统要等 CCCD 写完才登记接收通知，设备紧接着发的通知比登记早到，被系统丢弃；flutter_reactive_ble 的 Dart 层也要等订阅完成才开始收数据。
 
 v3 相对 v2 的变化：
 - 硬件按"外置 pH 模块（PH-4502C，Po 经分压接 ESP32-S3 内部 ADC）"、"每通道只在排空端有一个限位开关"、"吸液和排液共用一根管"来约定（第 3 节）。
@@ -23,7 +25,7 @@ v2 相对 v1 的变化：标定算法移到 App（`mv`、`cal_set` / `cal`，删
 - 同一时刻只允许 1 个连接，断开后立即重新广播。
 - 单条消息不超过 100 B。连接后 App 请求 MTU 247；协商结果小于 103 时，App 判定连接失败并断开。
 - 写 CMD 的带响应只表示"已收到"：GATT 写回调只把命令放进队列并返回成功，不回 ATT 错误；执行结果和错误一律通过 `error` 事件上报。
-- App 订阅 EVT 后，设备应立即推送一次 `state` 和一次 `cal`。
+- App 订阅 EVT 后，设备应立即推送一次 `state` 和一次 `cal`。手机不一定收得到这两条（见 v4 的变化），所以 App 不依赖它们：收到本次连接的第一条通知后（这说明通知通路已经建好），发一次 `sync`。
 
 ## 2. 消息格式
 
@@ -39,18 +41,19 @@ v2 相对 v1 的变化：标定算法移到 App（`mv`、`cal_set` / `cal`，删
 | `move` | `ch`: 1 / 2，`dir`: `"in"` / `"out"` | 单步动作：`in` 吸液（电机反转），`out` 排液（电机正转），步长由固件定。同一通道同一方向的单步可以累加 |
 | `jog` | 同 `move` | 持续动作。App 在按住按钮期间每 300 ms 重发一次；设备超过 1000 ms 未收到新的 `jog` 必须自动停止 |
 | `cal_set` | `slope`: 斜率（mV/pH，负数），`offset`: 零点（pH 7 时的 mV） | 保存标定参数（掉电不丢）并立即生效，回 `cal` 事件。`slope` 超出 −70…−40 或 `offset` 超出 −100…100 时回 `error: bad_cmd` |
+| `sync` | — | 依次回 `state` 和 `cal`，和订阅时推送的一样。不改变任何状态，任何状态下都接受 |
 
 `move` / `jog` 的通道或方向与正在进行的动作不同时，设备停止当前动作，改做新的动作。
 
-示例：`{"cmd":"titrate","target":7.00}`、`{"cmd":"jog","ch":1,"dir":"in"}`、`{"cmd":"cal_set","slope":-57.92,"offset":4.35}`
+示例：`{"cmd":"sync"}`、`{"cmd":"titrate","target":7.00}`、`{"cmd":"jog","ch":1,"dir":"in"}`、`{"cmd":"cal_set","slope":-57.92,"offset":4.35}`
 
 ### 2.2 事件（设备 → App，EVT 通知）
 
 | `evt` | 字段 | 说明 |
 |---|---|---|
 | `ph` | `v`: 当前 pH，`mv`: 电极电压（mV） | 固定 2 Hz 上报。`mv` 按第 2.4 节定义；`v` 由设备用当前标定参数从 `mv` 算出。设备没有实时时钟，时间戳由 App 在收到时打 |
-| `state` | `s`: `idle` / `titrating` / `moving` | 状态变化时上报，订阅后立即上报一次 |
-| `cal` | `slope`、`offset` | 设备当前保存的标定参数。订阅后上报一次，`cal_set` 生效后再回一次 |
+| `state` | `s`: `idle` / `titrating` / `moving` | 状态变化时上报；订阅后和收到 `sync` 时各上报一次 |
+| `cal` | `slope`、`offset` | 设备当前保存的标定参数。订阅后和收到 `sync` 时各上报一次，`cal_set` 生效后再回一次 |
 | `error` | `code`: 错误码，可选 `msg`: 说明；`limit` / `unhomed` 时还有 `ch`、`dir` | 见下表 |
 
 示例：`{"evt":"ph","v":6.98,"mv":1.2}`、`{"evt":"state","s":"titrating"}`、`{"evt":"error","code":"limit","ch":1,"dir":"in"}`
@@ -90,8 +93,8 @@ pH = 7 + (mv − offset) / slope
 | 状态 | 接受的命令 | 其余命令 |
 |---|---|---|
 | `idle` | 全部 | `error: busy` |
-| `titrating` | `stop`、`move`、`jog` | `error: busy` |
-| `moving` | `stop`、`move`、`jog` | `error: busy` |
+| `titrating` | `stop`、`move`、`jog`、`sync` | `error: busy` |
+| `moving` | `stop`、`move`、`jog`、`sync` | `error: busy` |
 
 - **注射器位置**：每个通道只在排空端（排液到底）有一个限位开关。
   - 开关触发时，停止排液，该通道步数清零，记为"已归位"，并回 `limit`（`dir: "out"`）。开关已经触发时，再收到排液命令，直接回 `limit`。

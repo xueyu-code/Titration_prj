@@ -246,7 +246,7 @@ static void start_task(TaskFunction_t fn, const char *name, uint32_t stack, UBas
 void app_main(void)
 {
     const esp_app_desc_t *app = esp_app_get_description();
-    ESP_LOGI(TAG, "titrator firmware %s, protocol v3, ESP-IDF %s", app->version, app->idf_ver);
+    ESP_LOGI(TAG, "titrator firmware %s, protocol v4, ESP-IDF %s", app->version, app->idf_ver);
 
     ESP_ERROR_CHECK(cal_store_init()); /* first: NVS is needed by the BT controller too */
     cal_t cal;

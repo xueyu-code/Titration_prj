@@ -91,7 +91,7 @@ void device_init(device_t *d, const device_ports_t *ports, const cal_t *cal);
 /* One CMD write of len bytes (len > PROTO_MAX_MSG means it was too long). */
 void device_on_write(device_t *d, const char *data, size_t len, uint32_t now_ms);
 
-/* The app enabled EVT notifications: emit `state` and `cal`. */
+/* The app enabled EVT notifications: emit `state` and `cal`, as for `sync`. */
 void device_on_subscribe(device_t *d);
 
 /* The connection is gone: stop everything, idle. */

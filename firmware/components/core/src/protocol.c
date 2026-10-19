@@ -119,6 +119,10 @@ static const char *parse_object(const cJSON *obj, cmd_t *out)
         *out = (cmd_t){.kind = CMD_STOP};
         return NULL;
     }
+    if (strcmp(cmd, "sync") == 0) {
+        *out = (cmd_t){.kind = CMD_SYNC};
+        return NULL;
+    }
     if (strcmp(cmd, "titrate") == 0) {
         float target;
 

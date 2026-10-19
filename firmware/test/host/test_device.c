@@ -114,6 +114,7 @@ void tearDown(void) {}
 
 static const char *const TITRATE = "{\"cmd\":\"titrate\",\"target\":7.00}";
 static const char *const STOP = "{\"cmd\":\"stop\"}";
+static const char *const SYNC = "{\"cmd\":\"sync\"}";
 static const char *const CAL_SET = "{\"cmd\":\"cal_set\",\"slope\":-57.92,\"offset\":4.35}";
 static const char *const MOVE_1_OUT = "{\"cmd\":\"move\",\"ch\":1,\"dir\":\"out\"}";
 static const char *const MOVE_1_IN = "{\"cmd\":\"move\",\"ch\":1,\"dir\":\"in\"}";
@@ -332,7 +333,35 @@ static void test_subscribe_reports_state_and_cal(void)
     expect_cal(1, -57.92f, 4.35f);
 }
 
-/* titrate and cal_set are busy while titrating or moving; stop/move/jog accepted */
+/* sync: state then cal in every state, and nothing else happens */
+static void test_sync_reports_state_and_cal(void)
+{
+    write(SYNC);
+    expect_evt_count(2);
+    expect_state(0, DEV_IDLE);
+    expect_cal(1, CAL_DEFAULT_SLOPE, CAL_DEFAULT_OFFSET);
+    expect_call_count(0);
+
+    write(CAL_SET);
+    titrating_with_dose();
+    write(SYNC);
+    expect_evt_count(2);
+    expect_state(0, DEV_TITRATING);
+    expect_cal(1, -57.92f, 4.35f);
+    expect_call_count(0); /* the dose runs on */
+    TEST_ASSERT_EQUAL_INT(DEV_TITRATING, device_state(&dev));
+
+    write(MOVE_1_OUT);
+    clear_log();
+    write(SYNC);
+    expect_evt_count(2);
+    expect_state(0, DEV_MOVING);
+    expect_call_count(0);
+    TEST_ASSERT_EQUAL_INT(DEV_MOVING, device_state(&dev));
+    TEST_ASSERT_EQUAL_INT(1, fk.n_saved);
+}
+
+/* titrate and cal_set are busy while titrating or moving; stop/move/jog/sync accepted */
 static void test_state_table(void)
 {
     /* idle: everything is accepted. */
@@ -1179,6 +1208,7 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_subscribe_reports_state_and_cal);
+    RUN_TEST(test_sync_reports_state_and_cal);
     RUN_TEST(test_state_table);
     RUN_TEST(test_bad_cmd_with_reason);
     RUN_TEST(test_titrate_and_stop);

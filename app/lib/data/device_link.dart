@@ -54,6 +54,8 @@ class DeviceLink {
   /// Connects, requests MTU 247 (a result too small for protocol messages
   /// fails the connection), verifies the titrator service exists and
   /// subscribes to EVT. Completes when ready; throws [LinkException].
+  /// The first notification afterwards triggers a [Sync], whose answer brings
+  /// the mode and the calibration.
   Future<void> connect(String deviceId) async {
     await disconnect();
     final attempt = _attempt = Completer<void>();
@@ -138,6 +140,7 @@ class DeviceLink {
     if (!services.any((s) => s.id == _service)) {
       throw const LinkException(LinkFailure.notTitrator);
     }
+    var synced = false;
     _notify = _ble
         .subscribeToCharacteristic(
           QualifiedCharacteristic(
@@ -147,6 +150,14 @@ class DeviceLink {
           ),
         )
         .listen((bytes) {
+          // The `state` and `cal` the device sends on subscribe arrive before
+          // Android and the plugin are ready for them and get dropped. The
+          // first notification shows the path is up (nothing else does), so
+          // ask again now (protocol section 1).
+          if (!synced) {
+            synced = true;
+            unawaited(send(const Sync()).catchError((Object _) {}));
+          }
           final event = DeviceEvent.decode(bytes);
           if (event != null) _eventController.add(event);
         }, onError: (Object e) => _lost(attempt, e));
