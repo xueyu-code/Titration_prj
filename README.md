@@ -83,7 +83,7 @@ idf.py build                              # 目标芯片和选项来自 sdkconfi
 idf.py -p /dev/ttyUSB0 flash monitor      # 板上 UART 口；原生 USB 口是 /dev/ttyACM0
 ```
 
-烧录需要用户在 `dialout` 组里，否则报 `Permission denied`。运行 `sudo usermod -aG dialout $USER` 之后要注销再登录才生效（只想让当前终端生效，用 `newgrp dialout`），再用 `id -nG` 确认输出里有 `dialout`，细节见 `docs/DEV_GUIDE.md` 3.1。主机测试不需要开发板（在仓库根目录运行）：
+烧录需要用户在串口组里，否则报 `Permission denied`。这个组在 Ubuntu / Debian 上叫 `dialout`，在 Arch / CachyOS / Manjaro 上叫 `uucp`（没有 `dialout` 组）。运行 `sudo usermod -aG dialout $USER`（Arch 系换成 `uucp`）之后要注销再登录才生效（只想让当前终端生效，用 `newgrp dialout` 或 `newgrp uucp`），再用 `id -nG` 确认输出里有这个组，细节见 `docs/DEV_GUIDE.md` 3.1。主机测试不需要开发板（在仓库根目录运行）：
 
 ```bash
 cmake -S firmware/test/host -B firmware/test/host/build -G Ninja
@@ -121,7 +121,7 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 - 往 `~/.bashrc`（zsh、fish 对应各自的配置文件）写一段带标记的环境变量块（`# >>> flutter-titrator-env >>>` 到 `# <<< flutter-titrator-env <<<`），并执行 `flutter precache`。
 - 幂等，可重复运行：已有的东西跳过，环境变量块先删后写。安装记录写在 `~/.flutter-titrator-env/manifest.txt`，卸载时依赖它。
 
-它不做什么：不把用户加入 `dialout` 组，不处理 `brltty`（这两件事见 `docs/DEV_GUIDE.md` 3.1、3.2），不换 Gradle 镜像。
+它不做什么：不把用户加入串口组（Ubuntu 的 `dialout`、Arch 系的 `uucp`），不处理 `brltty`（这两件事见 `docs/DEV_GUIDE.md` 3.1、3.2），不换 Gradle 镜像。
 
 常用选项：
 

@@ -29,14 +29,14 @@
 | Android SDK | 装在 `~/Android/Sdk`：platform 36 和 37.0、build-tools 36.0.0、platform-tools；App 的 `compileSdk` 是 37；NDK 由 Gradle 首次编译时自动下载。SDK 37 的目录叫 `platforms/android-37.0`，还要有一个符号链接 `platforms/android-37`。原因见 4.4 | ✅ 这些目录都在 |
 | JDK | 17 | ✅ `java -version` 显示 17 |
 | ESP-IDF | v5.5.5，装在 `~/esp/esp-idf-v5.5.5`，工具链在 `~/.espressif`。`firmware/README.md`、`firmware/DESIGN.md` 和主机测试的 `firmware/test/host/CMakeLists.txt` 都用这个路径 | ✅ `~/esp/esp-idf-v5.5.5/export.sh` 存在 |
-| 串口权限 | 用户必须在 `dialout` 组里，否则烧录报 `Permission denied`，见 3.1 | 用 `id -nG` 自己检查 |
+| 串口权限 | 用户必须在串口组里（Ubuntu 是 `dialout`，Arch 系是 `uucp`），否则烧录报 `Permission denied`，见 3.1 | 用 `id -nG` 自己检查 |
 | `brltty` | 如果板子用 CH340 / CP210x 串口芯片，它会抢占 `/dev/ttyUSB0`，要卸掉，见 3.2 | ⚠️ 没有用 CH340 / CP210x 的板子验证过 |
 
 `tools/env_config.sh` 可以一次装好 Flutter、Android SDK、JDK（ESP-IDF 要自己装，见第 5 节），用法见第 7 节。`flutter doctor` 里 channel、Chrome、`eglinfo` 三类告警无害，见第 8 节。
 
 ## 2. 新同事上手顺序
 
-1. 做 [第 3 节](#3-一次性系统准备)：系统准备。加入 `dialout` 组是必做的，手机的 udev 权限和 `brltty` 按需处理。
+1. 做 [第 3 节](#3-一次性系统准备)：系统准备。加入串口组（Ubuntu 是 `dialout`，Arch 系是 `uucp`）是必做的，手机的 udev 权限和 `brltty` 按需处理。
 2. 做 [第 4 节](#4-flutter-工程)：装好 Flutter 环境（`tools/env_config.sh` 或手动，见第 1、7 节），在 `app/` 下拉依赖、`flutter analyze`、`flutter test`，再用 `flutter run -t lib/main_sim.dart` 在手机上跑无硬件的模拟器版本（4.3 讲真机连接）。
 3. 做 [第 5 节](#5-esp-idf)：安装 ESP-IDF v5.5.5，编译 `firmware/`，跑主机测试；有开发板再烧录。
 4. 读 `docs/protocol.md`（App 和固件之间的 BLE 协议）和根目录的 `README.md`（目录结构、该看哪份文档、协作约定），再开始改代码。
@@ -45,22 +45,35 @@
 
 ### 3.1 串口权限（必做）
 
+串口设备归哪个组管，各发行版不一样：
+
+| 发行版 | 串口组 |
+|---|---|
+| Ubuntu / Debian | `dialout` |
+| Arch / CachyOS / Manjaro | `uucp`（没有 `dialout` 组，照 Ubuntu 的命令加会报组不存在） |
+
+拿不准时，插上板子看设备文件属于哪个组，第四列就是：
+
 ```bash
-sudo usermod -aG dialout $USER     # 把自己加进 dialout 组
+ls -l /dev/ttyACM0 /dev/ttyUSB0    # 例如 crw-rw---- 1 root uucp ...
 ```
 
-要注销再登录才对所有终端生效。想在当前这一个终端马上生效，可以用：
+把自己加进对应的组：
 
 ```bash
-newgrp dialout
+sudo usermod -aG dialout $USER     # Ubuntu / Debian
+sudo usermod -aG uucp $USER        # Arch / CachyOS / Manjaro
 ```
 
-用 `id -nG` 检查输出里有没有 `dialout`。
+要注销再登录才对所有终端生效。想在当前这一个终端马上生效，可以用 `newgrp dialout` 或 `newgrp uucp`。
+
+用 `id -nG` 检查输出里有没有这个组。
 
 ### 3.2 brltty（只有用 CH340 / CP210x 串口芯片时才需要）
 
 ```bash
-sudo apt remove brltty
+sudo apt remove brltty             # Ubuntu / Debian
+sudo pacman -Rns brltty            # Arch / CachyOS / Manjaro（装了才需要）
 ```
 
 现象：板子插上后 `/dev/ttyUSB0` 出现一下又消失。ESP32-S3 的原生 USB 口（`/dev/ttyACM0`）不受它影响。
@@ -439,7 +452,7 @@ App 和固件之间的通信约定只有一份：[protocol.md](protocol.md)（BL
 |---|---|
 | 新终端里 `flutter: command not found` | 先 `source ~/.bashrc`；再检查 `~/.bashrc` 里有没有 `# >>> flutter-titrator-env >>>` 这一块。非交互的 shell（cron、`ssh host 'cmd'`）不会读到它 |
 | `idf.py: command not found` | 这个终端还没运行 `get_idf` |
-| 烧录时 `Permission denied: '/dev/ttyACM0'` | 没加入 `dialout` 组，或加了但没重新登录，见 3.1 |
+| 烧录时 `Permission denied: '/dev/ttyACM0'` | 没加入串口组（Ubuntu 是 `dialout`，Arch 系是 `uucp`），或加了但没重新登录，见 3.1 |
 | `/dev/ttyUSB0` 一插就消失 | `brltty` 抢占，见 3.2 |
 | `Failed to connect to ESP32-S3` | 串口名不对，或没进下载模式，见 5.3 |
 | `adb devices` 显示 `unauthorized` | 手机上点“允许 USB 调试” |

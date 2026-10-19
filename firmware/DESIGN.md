@@ -537,7 +537,7 @@ idf.py -p /dev/ttyACM0 flash monitor       # 原生 USB 口（USB-Serial-JTAG）
 idf.py menuconfig                          # 改完后用 idf.py save-defconfig 写回 sdkconfig.defaults
 ```
 
-烧录要求用户在 `dialout` 组里，否则 `idf.py flash` 报 `Permission denied`：先 `sudo usermod -aG dialout $USER`，再注销重新登录（只想让当前终端生效用 `newgrp dialout`），`id -nG` 的输出里要有 `dialout`，详见 `docs/DEV_GUIDE.md` 3.1。
+烧录要求用户在串口组里（Ubuntu / Debian 是 `dialout`，Arch / CachyOS / Manjaro 是 `uucp`），否则 `idf.py flash` 报 `Permission denied`：先 `sudo usermod -aG dialout $USER`（Arch 系换成 `uucp`），再注销重新登录（只想让当前终端生效用 `newgrp dialout` 或 `newgrp uucp`），`id -nG` 的输出里要有这个组，详见 `docs/DEV_GUIDE.md` 3.1。
 
 主机测试（不需要 ESP-IDF 工具链，只需要 IDF 源码）：
 
