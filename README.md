@@ -116,7 +116,7 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 - 支持 Ubuntu 22.04 / 24.04，以及 CachyOS / Arch / Manjaro；x86_64 和 aarch64。其他发行版和 Ubuntu 其他版本会直接退出。
 - 装系统依赖（git、curl、unzip、xz、zip、cmake、ninja、gcc 等；cmake、ninja、gcc 留给固件的主机测试和 ESP-IDF 用）和 OpenJDK 17。本项目只做 Android，所以不再装 Flutter Linux 桌面需要的 clang、pkg-config、gtk3，并且执行 `flutter config --no-enable-linux-desktop`，`flutter precache` 也只下载 Android 的部分。
 - 装 Flutter（默认 3.47.7，克隆到 `~/development/flutter`），装 Android cmdline-tools、platform-tools、platforms（默认 `android-36` 和 `android-37.0`，并给 37.0 建 `android-37` 符号链接）、build-tools 36.0.0 到 `~/Android/Sdk`，接受协议。
-- 默认使用国内镜像（Flutter 源码用清华镜像，写入 `PUB_HOSTED_URL` 和 `FLUTTER_STORAGE_BASE_URL` 指向 flutter-io.cn）；`--no-mirror` 改用官方源。
+- 默认使用国内镜像（Flutter 源码用清华镜像，写入 `PUB_HOSTED_URL` 和 `FLUTTER_STORAGE_BASE_URL` 指向 flutter-io.cn；加了 `--with-esp-idf` 时，ESP-IDF 工具链通过 `IDF_GITHUB_ASSETS` 从 dl.espressif.cn 下载）；`--no-mirror` 改用官方源。
 - 装 adb 的 udev 规则（只有 Google `18d1` 和树莓派 `2e8a` 两个厂商 ID，别的手机见 `docs/DEV_GUIDE.md` 3.3），把用户加入 `plugdev`。
 - 往 `~/.bashrc`（zsh、fish 对应各自的配置文件）写一段带标记的环境变量块（`# >>> flutter-titrator-env >>>` 到 `# <<< flutter-titrator-env <<<`），并执行 `flutter precache`。
 - 幂等，可重复运行：已有的东西跳过，环境变量块先删后写。安装记录写在 `~/.flutter-titrator-env/manifest.txt`，卸载时依赖它。
@@ -151,7 +151,7 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 和本仓库的关系：
 
 - `--create-project` 会另建一个独立的新工程 `~/projects/titrator_app`，只含 Android 平台，依赖是 `app/` 现在用的那些（`flutter_reactive_ble`、`flutter_riverpod`、`permission_handler`、`fl_chart`、`flutter_local_notifications`、`intl`，开发依赖 `flutter_lints`、`fake_async`，再加 SDK 自带的 `flutter_localizations`），并把 `compileSdk` 改成 37。它不会碰本仓库的 `app/`，而 `app/` 已经建好，所以日常用不到这个选项。脚本里早期 Wi-Fi / MQTT 方案的那串包（`mqtt_client`、`web_socket_channel`、`http`、`network_info_plus`、`connectivity_plus`、`nsd`）还留着，但已经注释掉，本项目没有采用，暂时留作参考。
-- `--with-esp-idf` 默认装 v5.5.5，克隆到 `~/esp/esp-idf-v5.5.5`，和仓库文档一致。但它仍然只从 GitHub 克隆（没有国内镜像），丢弃 `install.sh` 的输出（失败时只有一句笼统的警告），还会装 direnv、往 rc 文件里加 hook，并在 ESP-IDF 目录里写一个 `.envrc`。GitHub 慢或连不上时，按 `docs/DEV_GUIDE.md` 第 5 节手动装。
+- `--with-esp-idf` 默认装 v5.5.5，克隆到 `~/esp/esp-idf-v5.5.5`，和仓库文档一致。源码仍然只从 GitHub 克隆（没有国内镜像），不过主仓库和 23 个子模块都只拉最新一次提交（`--depth 1 --shallow-submodules`），失败时才清掉半截目录改拉完整历史；工具链默认走 dl.espressif.cn（`--no-mirror` 时走 GitHub）。它会丢弃 `install.sh` 的输出（失败时只有一句笼统的警告），还会装 direnv、往 rc 文件里加 hook，并在 ESP-IDF 目录里写一个 `.envrc`。GitHub 慢或连不上时，按 `docs/DEV_GUIDE.md` 第 5 节手动装。
 
 ## 协作约定
 

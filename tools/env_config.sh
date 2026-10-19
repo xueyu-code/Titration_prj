@@ -880,9 +880,14 @@ if [[ $WITH_ESP_IDF -eq 1 ]]; then
   run mkdir -p "$(dirname "$IDF_HOME")"
   if [[ -d "$IDF_HOME/.git" ]]; then ok "已存在: $IDF_HOME"
   else
-    run git clone -b "$ESP_IDF_VERSION" --recursive --depth 1 https://github.com/espressif/esp-idf.git "$IDF_HOME" \
-      || run git clone -b "$ESP_IDF_VERSION" --recursive https://github.com/espressif/esp-idf.git "$IDF_HOME" \
-      || warn "ESP-IDF 克隆失败，可稍后手动重试"
+    # --depth 1 只管主仓库；不加 --shallow-submodules 时 23 个子模块都拉完整历史，光 esp32-wifi-lib 就有几百 MB
+    IDF_EXISTED=0; [[ -e "$IDF_HOME" ]] && IDF_EXISTED=1
+    if ! run git clone -b "$ESP_IDF_VERSION" --recursive --depth 1 --shallow-submodules https://github.com/espressif/esp-idf.git "$IDF_HOME"; then
+      # 失败的克隆会留下半截目录，不清掉的话下面的完整克隆必然报"目录已存在"；原本就有的目录不碰
+      if [[ $IDF_EXISTED -eq 0 ]]; then run rm -rf "$IDF_HOME"; fi
+      run git clone -b "$ESP_IDF_VERSION" --recursive https://github.com/espressif/esp-idf.git "$IDF_HOME" \
+        || warn "ESP-IDF 克隆失败，可稍后手动重试"
+    fi
     # 只有这次是本脚本克隆的才登记，别把用户原有的 ESP-IDF 当成"本脚本产物"（会被当 AUTO 直接删）
     if [[ -d "$IDF_HOME/.git" ]]; then manifest_add PATH "$IDF_HOME"; fi
   fi
@@ -902,8 +907,13 @@ if [[ $WITH_ESP_IDF -eq 1 ]]; then
     if command -v direnv >/dev/null 2>&1; then
       run direnv allow "$IDF_HOME" || warn "direnv allow 失败，请手动执行: direnv allow $IDF_HOME"
     fi
-    if run bash -c "cd '$IDF_HOME' && chmod +x install.sh && ./install.sh esp32s3" >/dev/null 2>&1; then
+    # 工具链默认从 github.com 下载；国内改走乐鑫的 CDN（见 docs/DEV_GUIDE.md 5.1）
+    IDF_ASSETS_ENV=()
+    if [[ $USE_MIRROR -eq 1 ]]; then IDF_ASSETS_ENV=(env IDF_GITHUB_ASSETS=dl.espressif.cn/github_assets); fi
+    if run "${IDF_ASSETS_ENV[@]}" bash -c "cd '$IDF_HOME' && chmod +x install.sh && ./install.sh esp32s3" >/dev/null 2>&1; then
       ok "ESP-IDF 工具链已装（cd 进目录后 direnv 自动生效）"
+    elif [[ $USE_MIRROR -eq 1 ]]; then
+      warn "install.sh 异常，请手动 cd $IDF_HOME && IDF_GITHUB_ASSETS=dl.espressif.cn/github_assets ./install.sh esp32s3"
     else
       warn "install.sh 异常，请手动 cd $IDF_HOME && ./install.sh esp32s3"
     fi
