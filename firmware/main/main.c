@@ -3,6 +3,7 @@
  * "任务与线程模型").
  *
  *   NimBLE host task --on_write/on_subscribe/on_disconnect--+
+ *   debug shell ------protocol lines, as on_write-----------+
  *   sensor task ------MSG_SAMPLE (2 Hz)---------------------+--> s_ctl_queue
  *   MCPWM ISR --------MSG_MOTION_END (stepper_end_cb_t)-----+         |
  *                                                                     v
@@ -30,6 +31,10 @@
 #include "platform/cal_store.h"
 #include "platform/ph_adc.h"
 #include "platform/stepper.h"
+
+#if CONFIG_TITRATOR_DEBUG_SHELL
+#include "debug_shell.h"
+#endif
 
 #define CTL_TICK_MS 50u      /* jog watchdog resolution */
 #define CTL_QUEUE_LEN 16u
@@ -71,6 +76,7 @@ typedef struct {
 } ctl_msg_t;
 
 static const char *TAG = "main";
+static const char *EVT_TAG = "evt"; /* every event sent, at DEBUG */
 
 static QueueHandle_t s_ctl_queue;
 static TaskHandle_t s_ctl_task;
@@ -95,6 +101,7 @@ static void port_emit(void *ctx, const evt_t *evt)
         ESP_LOGE(TAG, "event kind %d does not encode", (int)evt->kind);
         return;
     }
+    ESP_LOGD(EVT_TAG, "%.*s", (int)len, buf);
     ble_link_notify(buf, len);
 }
 
@@ -321,4 +328,7 @@ void app_main(void)
         .on_disconnect = on_ble_disconnect,
     };
     ESP_ERROR_CHECK(ble_link_start(&cbs));
+#if CONFIG_TITRATOR_DEBUG_SHELL
+    debug_shell_start(on_ble_write);
+#endif
 }

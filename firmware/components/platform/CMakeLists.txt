@@ -8,3 +8,6 @@ idf_component_register(
     REQUIRES core esp_common
     PRIV_REQUIRES esp_driver_mcpwm esp_driver_pcnt esp_driver_gpio esp_adc
                   bt nvs_flash esp_hw_support freertos log)
+
+# stepper.c switches the motor drivers off on a fatal error (see stepper.h).
+target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_panic_handler")

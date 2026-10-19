@@ -47,5 +47,22 @@ bool stepper_extend(uint8_t ch, dir_t dir, int32_t steps);
 /* Stops ch at once and finalises its position. No end callback. */
 void stepper_halt(uint8_t ch);
 
-/* Switch level now (debug and logs). */
-bool stepper_limit_active(uint8_t ch);
+/* One channel as the hardware sees it right now (debug shell). */
+typedef struct {
+    bool limit;           /* switch active */
+    bool running;
+    bool homed;
+    int32_t pos;          /* steps from the empty end at the end of the last motion */
+    int pulses;           /* PCNT count of the running or last motion */
+    axis_status_t status; /* AXIS_RUNNING, or how the last motion ended */
+} stepper_info_t;
+
+void stepper_get_info(uint8_t ch, stepper_info_t *out);
+
+/*
+ * Fatal errors: the panic handler is wrapped (link option in the component's
+ * CMakeLists.txt) so that the drivers are switched off before the backtrace
+ * and the core dump are written. That takes up to a few seconds, in which the
+ * MCPWM timers would keep stepping at their last speed with nobody checking
+ * the limit switches.
+ */

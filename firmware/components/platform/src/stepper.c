@@ -349,7 +349,29 @@ void stepper_halt(uint8_t ch)
     portEXIT_CRITICAL(&c->lock);
 }
 
-bool stepper_limit_active(uint8_t ch)
+void stepper_get_info(uint8_t ch, stepper_info_t *out)
 {
-    return limit_active(&s_ch[ch]);
+    stepper_ch_t *c = &s_ch[ch];
+    int n = 0;
+
+    portENTER_CRITICAL(&c->lock);
+    pcnt_unit_get_count(c->pcnt, &n);
+    out->running = c->running;
+    out->status = axis_status(&c->axis);
+    out->homed = axis_homed(&c->axis);
+    out->pos = axis_pos(&c->axis);
+    portEXIT_CRITICAL(&c->lock);
+    out->pulses = n;
+    out->limit = limit_active(c);
+}
+
+/* ------------------------------------------------------------- panic */
+
+void __real_esp_panic_handler(void *info);
+
+/* See stepper.h. Register write only: the cache may be off here. */
+void IRAM_ATTR __wrap_esp_panic_handler(void *info)
+{
+    gpio_ll_set_level(&GPIO, BOARD_EN_GPIO, !BOARD_EN_ACTIVE_LEVEL);
+    __real_esp_panic_handler(info);
 }

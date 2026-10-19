@@ -131,11 +131,14 @@ ESP32-S3 数据手册 5.5 节的数字（测量条件：ADC 脚接 100 nF，直�
 ```
 firmware/
 ├── CMakeLists.txt            ESP-IDF 工程（MINIMAL_BUILD）
-├── sdkconfig.defaults        四线 Flash + 八线 PSRAM、NimBLE、IRAM、日志
+├── sdkconfig.defaults        四线 Flash + 八线 PSRAM、NimBLE、IRAM、日志、core dump
+├── partitions.csv            IDF 的单应用（1.5 MB）分区表 + 64 KB core dump 分区
 ├── version.txt               固件版本 → esp_app_desc
 ├── DESIGN.md                 本文
 ├── main/
-│   └── main.c                装配：队列、任务、device 的端口实现
+│   ├── main.c                装配：队列、任务、device 的端口实现
+│   ├── debug_shell.c         串口调试命令（第 15 节），Kconfig 开关 TITRATOR_DEBUG_SHELL
+│   └── Kconfig.projbuild
 ├── components/
 │   ├── core/                 纯 C，不依赖 ESP-IDF（主机上同样能编译）
 │   │   ├── include/core/
@@ -203,6 +206,7 @@ test/host ──► core + sim
 | NimBLE host 任务 | 0 | 21（IDF 默认值） | GATT 回调：把写入的字节拷进 `MSG_WRITE`；订阅时发 `MSG_SUBSCRIBE`；断开时发 `MSG_DISCONNECT` 并重新广播。只做 `xQueueSend(…, 0)`，不阻塞 |
 | **控制任务 `ctl`** | **1** | 6 | **唯一调用 `device_*` 的地方**。阻塞在队列上，超时为 `CTL_TICK_MS` = 50 ms；每次醒来都调用一次 `device_tick()`。也在这个任务里调用 `stepper_init()`，所以 MCPWM 中断落在核 1 |
 | 采样任务 `sensor` | 1 | 5 | 循环调用 `ph_adc_read()`（它阻塞到下一个 500 ms 窗口结束），然后发 `MSG_SAMPLE` |
+| 调试命令任务 `shell` | 0 | 1 | 阻塞读 UART0 的一行：协议命令照 BLE 写入的路子进队列，其余命令只读（第 15 节）。只在 `TITRATOR_DEBUG_SHELL` 打开时存在 |
 | MCPWM 定时器 ISR | 1 | 低（1–3） | 每个步进周期开始时调用 `axis_next()`，设置下一个周期或停止；运动结束时调用 `main` 提供的回调，用 `xQueueSendFromISR` 发 `MSG_MOTION_END` |
 | PCNT ISR | 1 | 低 | 只在计数溢出时由驱动内部累加，不涉及业务 |
 
@@ -521,10 +525,19 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 
 - 版本号：`firmware/version.txt`（现在是 `0.1.0`），由 IDF 写入 `esp_app_desc`。启动时打印一行 `titrator firmware 0.1.0, protocol v4, ESP-IDF v5.5.5`。发布时改 `version.txt`，不使用 git describe（仓库里还有 App 代码，提交哈希对固件没有意义）。
 - 日志级别：默认 INFO，最高编译到 DEBUG（可以在运行时用 `esp_log_level_set` 对单个 tag 打开）；NimBLE 设为 WARNING。
-- tag：`main`、`ble`、`stepper`、`ph_adc`、`cal`、`device`、`titr`。
+- tag：`main`、`evt`、`ble`、`stepper`、`ph_adc`、`cal`、`device`、`titr`。`evt` 只有 DEBUG：发给 App 的每条事件原文。
 - INFO 级别要记录的内容：状态变化；每次滴定决策（pH、误差、通道、µL、换向次数）；每次运动的结束原因和位置；电极异常的进入和退出；标定参数的保存；连接、断开和 MTU。DEBUG 级别：每条命令原文、每个 `V_adc` 读数。WARN 级别：队列满、通知失败、NVS 失败、PCNT 计数与预期不符。
 - ISR（`axis.c`、`stepper.c` 的中断部分）不打日志。
 - 运行状态：控制任务每 60 s（`STATS_PERIOD_MS`）在 `main` tag 下打一行 INFO，例如（裸板实测）`stack free: ctl 3712, sensor 3004, nimble_host 1076 B; internal heap free 212643 B (min 176396 B); queue peak 1/16`。栈是开机以来的最低剩余量（`uxTaskGetStackHighWaterMark`，IDF 里单位是字节），堆是内部 RAM 的当前剩余和历史最低值，队列是开机以来控制队列同时排着的最多消息数。只走串口，不经 BLE：调试时板子都插着 USB，串口还能看到 panic 回溯和蓝牙起来前的日志。
+- 调试命令（`main/debug_shell.c`，`TITRATOR_DEBUG_SHELL` 默认打开）：在 UART0 上一行一条，回车结束，收到的行带 `> ` 回显。`help` 列出全部命令。
+  - `{"cmd":...}`：协议命令，和 BLE 写入走同一条路（`on_ble_write` → 控制队列），不用手机就能把设备逻辑完整跑一遍；配合 `log evt debug` 看回的事件。
+  - `axes`：每个通道的限位电平、是否归位、位置、运行状态或上次运动的结束原因、PCNT 计数（`stepper_get_info()`，在通道锁里读）。
+  - `tasks`：每个任务的状态、优先级、最低栈余量，以及内部堆和 PSRAM 的剩余。控制任务卡死时它照样能用（它在核 0，优先级最低）。
+  - `log <tag|*> <level>`：运行时调整日志级别，比如 `log device debug` 看每条命令原文、`log ph_adc debug` 看每个 `V_adc`。
+  - 不提供读任意寄存器（见第 17 节）。串口在物理上够得着才能用，所以不需要鉴权；正式版要关，就在 `sdkconfig.defaults` 里加 `CONFIG_TITRATOR_DEBUG_SHELL=n`。
+- core dump：所有致命错误（异常、看门狗、`abort`、栈溢出）都会把各任务的寄存器和栈写进 `coredump` 分区（实测 10 个任务约 18 KB，分区 64 KB），用单独的 1792 B 栈（实测用了 1296 B），所以栈溢出也能写。下次开机日志里有 `Found core dump N bytes in flash`，用 `idf.py coredump-info` 读出崩溃任务和带源码行号的调用栈。flash 里只留最近一次，读完用 `parttool.py erase_partition --partition-name=coredump` 清掉。
+  - panic 一开始先拉高 EN、关掉两个驱动（`stepper.c` 里的 `__wrap_esp_panic_handler`，链接时用 `--wrap`）：打印回溯、写 dump 的这段时间里 MCPWM 硬件还在按最后的速度出脉冲，但没人检查限位了。
+  - IDF 的 core dump 代码按编译期级别打日志；这里编译到了 DEBUG，它会在设备停着的时候每个任务打好几行，多花约 1.5 s。所以工程的 `CMakeLists.txt` 把它单独降到 INFO，实测 panic 到重启约 0.25 s。
 
 ---
 
@@ -549,6 +562,13 @@ cmake --build firmware/test/host/build
 ctest --test-dir firmware/test/host/build --output-on-failure
 ```
 
+崩溃之后：
+
+```bash
+idf.py -p /dev/ttyACM0 coredump-info                                       # 崩溃任务、寄存器、带行号的调用栈
+parttool.py --port /dev/ttyACM0 erase_partition --partition-name=coredump  # 读完清掉
+```
+
 `sdkconfig` 只在 `firmware/sdkconfig` 不存在时才由 `sdkconfig.defaults` 生成；改了 `sdkconfig.defaults`（例如更换板卡）以后，先删除 `firmware/sdkconfig` 再 `idf.py build`。
 
 ---
@@ -565,6 +585,7 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 | 位置写入 NVS | 协议明确规定不写；断电期间可能被手动推动，存下来的位置不可信 |
 | OTA、配对加密、多连接 | 不需要（协议规定只允许 1 个连接） |
 | 编码器闭环 | 没有编码器；PCNT 已经保证"发了多少步就记多少步" |
+| 串口或 BLE 读任意寄存器（peek） | 外设寄存器由 IDF 驱动配置，出问题多半是接线或参数，`axes`、`tasks` 更直接；读错地址会让设备崩溃，读 FIFO 类寄存器有副作用。真要看原始寄存器或内存，用板上原生 USB 口的 JTAG（OpenOCD + GDB，不用改固件），但电机运行时不要停 CPU：停住以后限位中断不响应，脉冲照出 |
 | 外置 ADC 驱动 | 内部 ADC 按数字估算已经足够（第 1.3 节）；只有在实测 INL 不合格时才换，接口已经预留 |
 | 温度补偿、To/Do | 协议约定不做温度补偿；To 测的是电路板温度，Do 没有用处 |
 | Wi-Fi | 协议只定义了 BLE |
@@ -626,6 +647,11 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 - ✅ 断开后能立即重新连上：App 里连续断开、重连 3 次，每次都显示“空闲”。
 - ✅ 写入 101 B 的命令，回 `bad_cmd`（`msg: "too long"`）；正好 100 B 的命令被接受。
 - 用 nRF Connect 检查广播包是 21 B、设备名在扫描响应里。（PC 扫描已经看到设备名和 Service UUID，但没有看包长。）
+
+**调试命令和 core dump**
+- ✅ 调试命令：`help`、`axes`、`tasks`、`log`、协议命令（`sync` 回 `state` 和 `cal`；被拒的 `move`/`jog` 在日志里有原因）、错误输入（未知命令、JSON 错、超长行）都符合预期。`shell` 任务 4096 B 的栈剩 2004 B。
+- ✅ core dump：临时加一条写空指针的命令触发 panic，dump 写入 18020 B，开机日志报告找到 dump，`idf.py coredump-info` 指到源码行；测完删掉这条命令、清空分区。
+- 电机运行中触发 panic（同样临时加一条命令），用逻辑分析仪确认 EN 在回溯打印之前就变高（驱动关断）。目前只从反汇编确认 `panic_handler` 调的是包装函数、包装函数先写 GPIO15 的 W1TS。
 
 **任务栈**
 - 做完一次滴定和一次 `cal_set` 后，看串口上下一行 `stack free: ...`（第 15 节），确认各任务栈余量够用。

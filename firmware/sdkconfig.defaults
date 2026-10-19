@@ -12,8 +12,9 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 
-# One factory app (1.5 MB) + NVS. No OTA.
-CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# One factory app (1.5 MB), NVS and a core dump partition. No OTA.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 
@@ -31,6 +32,15 @@ CONFIG_MCPWM_ISR_HANDLER_IN_IRAM=y
 CONFIG_MCPWM_CTRL_FUNC_IN_IRAM=y
 CONFIG_PCNT_CTRL_FUNC_IN_IRAM=y
 
-# Logging: INFO by default, DEBUG can be enabled per tag at runtime.
+# Logging: INFO by default, DEBUG can be enabled per tag at runtime (`log` in
+# the debug shell).
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+
+# Fatal errors leave a core dump in flash: `idf.py coredump-info`. It gets its
+# own stack, so that a stack overflow can still be dumped.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_STACK_SIZE=1792
+
+# `tasks` in the debug shell (main/debug_shell.c).
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y

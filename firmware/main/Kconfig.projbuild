@@ -1,0 +1,10 @@
+menu "Titrator"
+
+    config TITRATOR_DEBUG_SHELL
+        bool "Debug shell on the console UART"
+        default y
+        help
+            Line commands on UART0 for development (main/debug_shell.c):
+            protocol commands as over BLE, axes, tasks, log levels.
+
+endmenu
