@@ -10,6 +10,7 @@
 
 # Build outputs and tool caches
 build/
+__pycache__/
 .dart_tool/
 .gradle/
 

@@ -25,6 +25,7 @@ components/core/       pure C, no ESP-IDF: protocol, pH, sensor fault,
                        axis (motion profile, homing), titration loop, device
 components/platform/   thin ESP-IDF layer: stepper, ph_adc, ble_link, cal_store
 test/host/             host unit tests and the closed-loop beaker rig
+tools/                 bench scripts: serial console, BLE from the PC, smoke test
 ```
 
 ## Build and flash
@@ -66,6 +67,23 @@ cmake -S firmware/test/host -B firmware/test/host/build -G Ninja
 cmake --build firmware/test/host/build
 ctest --test-dir firmware/test/host/build --output-on-failure
 ```
+
+## Bench tools
+
+With the board on USB and the firmware flashed (`TITRATOR_DEBUG_SHELL` on, the
+default). Opening the port does not reset the board.
+
+```bash
+python tools/smoke.py --ble          # reset, then check boot, commands, both axes, titrate,
+                                     # BLE, stacks, heap, log; exit status 0 = all passed
+python tools/sercmd.py axes tasks    # debug shell lines (help lists them), prints the log
+python tools/sercmd.py --tail 600    # only follow the log
+/usr/bin/python3 tools/btcmd.py '{"cmd":"sync"}'   # BLE from the PC, like the app
+```
+
+`sercmd.py` and `smoke.py` need pyserial, so run them with the ESP-IDF Python
+(`python` after `export.sh`); `btcmd.py` needs dbus-python and PyGObject from
+the system Python. The shell commands are in DESIGN §15.
 
 ## Editor
 

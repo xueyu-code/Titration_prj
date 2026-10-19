@@ -161,6 +161,7 @@ firmware/
 │       │   ├── ble_link.h      NimBLE GATT 服务
 │       │   └── cal_store.h     NVS 中的标定参数
 │       └── src/*.c
+├── tools/                    板上测试脚本：串口命令 sercmd.py、PC 端 BLE btcmd.py、冒烟测试 smoke.py
 └── test/host/                主机测试（gcc + CMake + Unity）
     ├── CMakeLists.txt
     ├── test_*.c
@@ -534,6 +535,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
   - `axes`：每个通道的限位电平、是否归位、位置、运行状态或上次运动的结束原因、PCNT 计数（`stepper_get_info()`，在通道锁里读）。
   - `tasks`：每个任务的状态、优先级、最低栈余量，以及内部堆和 PSRAM 的剩余。控制任务卡死时它照样能用（它在核 0，优先级最低）。
   - `log <tag|*> <level>`：运行时调整日志级别，比如 `log device debug` 看每条命令原文、`log ph_adc debug` 看每个 `V_adc`。
+  - 脚本用 `tools/sercmd.py`：打开串口不会复位板子（先放 RTS 再放 DTR），`--reset` 才复位。`tools/smoke.py` 在此基础上做冒烟测试，见第 19 节。
   - 不提供读任意寄存器（见第 17 节）。串口在物理上够得着才能用，所以不需要鉴权；正式版要关，就在 `sdkconfig.defaults` 里加 `CONFIG_TITRATOR_DEBUG_SHELL=n`。
 - core dump：所有致命错误（异常、看门狗、`abort`、栈溢出）都会把各任务的寄存器和栈写进 `coredump` 分区（实测 10 个任务约 18 KB，分区 64 KB），用单独的 1792 B 栈（实测用了 1296 B），所以栈溢出也能写。下次开机日志里有 `Found core dump N bytes in flash`，用 `idf.py coredump-info` 读出崩溃任务和带源码行号的调用栈。flash 里只留最近一次，读完用 `parttool.py erase_partition --partition-name=coredump` 清掉。
   - panic 一开始先拉高 EN、关掉两个驱动（`stepper.c` 里的 `__wrap_esp_panic_handler`，链接时用 `--wrap`）：打印回溯、写 dump 的这段时间里 MCPWM 硬件还在按最后的速度出脉冲，但没人检查限位了。
@@ -635,8 +637,8 @@ parttool.py --port /dev/ttyACM0 erase_partition --partition-name=coredump  # 读
 - ✅ `cal_store`：`cal_set` 写入后重启，标定仍然生效（见下面 BLE 一组）。
 
 **步进（不接驱动）**
-- 命令 1、121、1212、23200 步，PCNT 计数都与命令完全相等。
-- 运行中 halt 后，位置等于 PCNT 计数。
+- 命令 1、121、1212、23200 步，PCNT 计数都与命令完全相等。（121 步已确认：`move` 后 `axes` 显示 pos 121、pulses 121。）
+- ✅ 运行中 halt 后，位置等于 PCNT 计数：jog 0.8 s 后 `stop`，pulses 925，pos 从 121 变成 1046。
 - 用杜邦线把 LIMIT 脚拉到有效电平，排液在 2 步以内停止。
 - 用逻辑分析仪或示波器检查启停时没有多余的边沿（重点：第一个周期使用新的周期值、撤掉强制电平时没有上升沿）。
 
@@ -648,9 +650,24 @@ parttool.py --port /dev/ttyACM0 erase_partition --partition-name=coredump  # 读
 - ✅ 写入 101 B 的命令，回 `bad_cmd`（`msg: "too long"`）；正好 100 B 的命令被接受。
 - 用 nRF Connect 检查广播包是 21 B、设备名在扫描响应里。（PC 扫描已经看到设备名和 Service UUID，但没有看包长。）
 
+**冒烟测试**：每次烧录后跑 `python tools/smoke.py --ble`（约 20 s，退出码 0 表示全部通过）。它会复位板子，然后检查：
+- 启动和广播；
+- `sync`、JSON 错误、101 B 和 100 B 的命令；
+- 两个通道各做一次 `move` 和一次 jog 再 `stop`：位置跟着 PCNT 计数走；限位悬空时先确认 `out` 被拒并完成归位，再测 `in`；
+- `titrate`：没接 pH 输入时回 `error sensor`，接了就能进入滴定再回到 idle；
+- 从 PC 端走 BLE 的订阅和 `sync`；
+- 任务栈和内部堆的余量；
+- 整个日志里没有 E 级日志，也没有 panic。
+
+它只检查任何接线下都应该成立的东西。2026-10-19 在裸板上全部通过。
+
+注意：裸板上 GPIO1 悬空时读数在 146–149 mV 之间，正好贴着 `SENSOR_RAIL_LO_MV`（150 mV），偶尔一个读数过线就会退出 `sensor` 异常。所以 `titrate` 有时被拒、有时被接受，冒烟测试两种情况都接受。接上 1.05 V 分压后结果就确定了。
+
 **调试命令和 core dump**
 - ✅ 调试命令：`help`、`axes`、`tasks`、`log`、协议命令（`sync` 回 `state` 和 `cal`；被拒的 `move`/`jog` 在日志里有原因）、错误输入（未知命令、JSON 错、超长行）都符合预期。`shell` 任务 4096 B 的栈剩 2004 B。
 - ✅ core dump：临时加一条写空指针的命令触发 panic，dump 写入 18020 B，开机日志报告找到 dump，`idf.py coredump-info` 指到源码行；测完删掉这条命令、清空分区。
+- ✅ 栈溢出也能写 dump：临时加一条递归命令把 `shell` 的栈写爆，canary 检查报 `stack overflow in task shell`，dump 写入 22020 B，`coredump-info` 给出原因和任务名。
+- ✅ 调试命令和 BLE 同时使用：PC 端连着时，串口发的 `sync` 的回复也从 BLE 发出，BLE 发的 `move` 照常处理；nimble_host 栈剩 1036 B，跟没有 shell 时一样。`TITRATOR_DEBUG_SHELL=n` 也能编译，没有警告，镜像小 17 KB。
 - 电机运行中触发 panic（同样临时加一条命令），用逻辑分析仪确认 EN 在回溯打印之前就变高（驱动关断）。目前只从反汇编确认 `panic_handler` 调的是包装函数、包装函数先写 GPIO15 的 W1TS。
 
 **任务栈**

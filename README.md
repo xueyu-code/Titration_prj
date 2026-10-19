@@ -112,7 +112,7 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 ## 调试日志
 
 - 固件：日志都走板上 UART 口，`idf.py -p /dev/ttyACM0 monitor` 查看（打开串口会复位板子）。每 60 s 有一行 `stack free: ...`，记录各任务栈和内部堆的最低余量、控制队列的最高占用，内容见 `firmware/DESIGN.md` 第 15 节。
-- 固件调试命令：同一个串口上输入一行回车，`help` 列出全部命令。`{"cmd":"sync"}` 这样的协议命令和手机发的一样处理，`log evt debug` 后能看到回的事件；`axes` 看限位和位置，`tasks` 看各任务状态和栈余量，`log <tag> debug` 打开某个模块的详细日志。
+- 固件调试命令：同一个串口上输入一行回车，`help` 列出全部命令。`{"cmd":"sync"}` 这样的协议命令和手机发的一样处理，`log evt debug` 后能看到回的事件；`axes` 看限位和位置，`tasks` 看各任务状态和栈余量，`log <tag> debug` 打开某个模块的详细日志。脚本见 `firmware/tools/`：`sercmd.py` 发命令、看日志（不会复位板子），`smoke.py --ble` 是烧录后的冒烟测试（约 20 s，全部通过才返回 0），`btcmd.py` 从电脑端走蓝牙发命令。用法见 `firmware/README.md`。
 - 固件崩溃：现场写在 flash 的 core dump 分区里，下次开机日志会有 `Found core dump`。用 `idf.py -p /dev/ttyACM0 coredump-info` 看崩在哪一行，读完用 `parttool.py --port /dev/ttyACM0 erase_partition --partition-name=coredump` 清掉。
 - App：连接的每一步、发出的每条命令、收到的每条通知都写进 logcat，正式版也一样。手机连着电脑时运行 `adb logcat -s flutter`，以 `titrator:` 开头的就是：`tx` 是发出的命令，`rx` 是收到的通知，原样打出。
 - 两边对照，就能看出一条消息丢在了哪一侧。
