@@ -350,10 +350,19 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 ls /dev/ttyACM* /dev/ttyUSB*
 ```
 
-- ESP32-S3 的**原生 USB 口**通常是 `/dev/ttyACM0`；
-- **串口桥芯片那个口**（CH340 / CP210x）是 `/dev/ttyUSB0`。
+| 口 | 芯片（`lsusb` 里的 ID） | 设备名 |
+|---|---|---|
+| 板上 **UART** 口 | CH343（`1a86:55d3`），我们这块板就是 | `/dev/ttyACM*` |
+| 板上 **UART** 口 | CP2102N（`10c4:ea60`）或 CH340（`1a86:7523`） | `/dev/ttyUSB*` |
+| 板上 **USB** 口（ESP32-S3 原生 USB） | 乐鑫（`303a:xxxx`） | `/dev/ttyACM*` |
 
-`firmware/README.md` 里的示例用板上 UART 口 `/dev/ttyUSB0`；以你的板子实际出现的设备名为准。
+同一型号的开发板，不同批次用的串口芯片可能不一样，以 `lsusb` 为准。UART 口和原生 USB 口都可能是 `/dev/ttyACM*`，两个口同时插着时编号取决于插入顺序，这时用 `/dev/serial/by-id/` 下的名字区分：
+
+```bash
+ls -l /dev/serial/by-id/    # 例如 usb-1a86_USB_Single_Serial_5CF9073060-if00 -> ../../ttyACM0
+```
+
+推荐用 UART 口烧录：它能自动进下载模式，不用按 BOOT 键。原生 USB 口在板上的程序没开 USB-Serial-JTAG 时（例如出厂固件，`lsusb` 显示 `303a:4001`），要先手动进下载模式：按住 BOOT，按一下 RST，再松开 BOOT。仓库文档里的示例都用 `/dev/ttyACM0`（CH343 的 UART 口）；以你的板子实际出现的设备名为准。
 
 ```bash
 idf.py -p /dev/ttyACM0 flash monitor

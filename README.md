@@ -80,8 +80,10 @@ flutter run -t lib/main_sim.dart
 . ~/esp/esp-idf-v5.5.5/export.sh
 cd firmware
 idf.py build                              # 目标芯片和选项来自 sdkconfig.defaults
-idf.py -p /dev/ttyUSB0 flash monitor      # 板上 UART 口；原生 USB 口是 /dev/ttyACM0
+idf.py -p /dev/ttyACM0 flash monitor      # 板上 UART 口（CH343 串口芯片）
 ```
+
+板上 UART 口的设备名取决于串口芯片：CH343（`lsusb` 显示 `1a86:55d3`，我们这块板就是）是 `/dev/ttyACM0`，CP2102N（`10c4:ea60`）是 `/dev/ttyUSB0`。原生 USB 口也是 `/dev/ttyACM*`，两个口都插着时按 `/dev/serial/by-id/` 下的名字区分，细节见 `docs/DEV_GUIDE.md` 5.3。
 
 烧录需要用户在串口组里，否则报 `Permission denied`。这个组在 Ubuntu / Debian 上叫 `dialout`，在 Arch / CachyOS / Manjaro 上叫 `uucp`（没有 `dialout` 组）。运行 `sudo usermod -aG dialout $USER`（Arch 系换成 `uucp`）之后要注销再登录才生效（只想让当前终端生效，用 `newgrp dialout` 或 `newgrp uucp`），再用 `id -nG` 确认输出里有这个组，细节见 `docs/DEV_GUIDE.md` 3.1。主机测试不需要开发板（在仓库根目录运行）：
 

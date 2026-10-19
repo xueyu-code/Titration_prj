@@ -35,8 +35,14 @@ Toolchain: ESP-IDF v5.5.5 in `~/esp/esp-idf-v5.5.5`.
 . ~/esp/esp-idf-v5.5.5/export.sh
 cd firmware
 idf.py build                              # target and options come from sdkconfig.defaults
-idf.py -p /dev/ttyUSB0 flash monitor      # UART port of the DevKitC
+idf.py -p /dev/ttyACM0 flash monitor      # UART port of the DevKitC (CH343 bridge)
 ```
+
+The device name of the UART port depends on the board's USB-to-UART bridge:
+`/dev/ttyACM0` for a CH343 (`lsusb` shows `1a86:55d3`, as on our board) and
+`/dev/ttyUSB0` for a CP2102N (`10c4:ea60`). The native USB port is also a
+`/dev/ttyACM*` device, so with both ports plugged in, pick the port by name under
+`/dev/serial/by-id/` (the bridge shows up as `usb-1a86_USB_Single_Serial_...`).
 
 Flashing needs your user in the serial-port group, otherwise `idf.py flash`
 fails with `Permission denied`. The group is `dialout` on Ubuntu / Debian and

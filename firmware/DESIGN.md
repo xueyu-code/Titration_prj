@@ -532,8 +532,8 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 . ~/esp/esp-idf-v5.5.5/export.sh
 cd firmware
 idf.py build                               # 目标芯片取自 sdkconfig.defaults，不需要 set-target
-idf.py -p /dev/ttyUSB0 flash monitor       # 板上 USB 转串口那个口（UART0 控制台）
-idf.py -p /dev/ttyACM0 flash monitor       # 原生 USB 口（USB-Serial-JTAG）
+idf.py -p /dev/ttyACM0 flash monitor       # 板上 USB 转串口那个口（UART0 控制台）；串口芯片是 CP2102N 时为 /dev/ttyUSB0
+idf.py -p /dev/ttyACM0 flash monitor       # 原生 USB 口（USB-Serial-JTAG）；两个口都插着时编号看插入顺序，用 /dev/serial/by-id/ 区分
 idf.py menuconfig                          # 改完后用 idf.py save-defconfig 写回 sdkconfig.defaults
 ```
 
