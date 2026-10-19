@@ -101,10 +101,12 @@ void main() {
   late DeviceLink link;
   late List<LinkStatus> statuses;
   late List<DeviceEvent> events;
+  late List<String> logged;
 
   setUp(() {
     ble = FakeBle();
-    link = DeviceLink(ble);
+    logged = [];
+    link = DeviceLink(ble, log: logged.add);
     statuses = [];
     events = [];
     link.status.listen(statuses.add);
@@ -345,6 +347,26 @@ void main() {
     expect(statuses.where((s) => s == LinkStatus.disconnected), hasLength(1));
     expect(ble.cancelledConnections, 1);
   });
+
+  test(
+    'logs the connection, what is sent and received, and the drop',
+    () async {
+      await connected();
+      ble.notifications.add(utf8.encode('{"evt":"ph","v":6.98}'));
+      await settle();
+      ble.update(DeviceConnectionState.disconnected);
+      await settle();
+      expect(logged, [
+        'connect dev',
+        'MTU 247',
+        'subscribed',
+        'rx {"evt":"ph","v":6.98}',
+        'tx {"cmd":"sync"}',
+        'lost',
+        'disconnect',
+      ]);
+    },
+  );
 
   test('reconnecting replaces the previous connection', () async {
     await connected();

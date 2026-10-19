@@ -109,6 +109,12 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 - 版本号是 `app/pubspec.yaml` 里的 `version`（现在是 `1.0.0+1`），发新版时改它。
 - `flutter build apk --release -t lib/main_sim.dart` 打出来的是模拟器版，不连真实设备，不要当正式版发。它和正式版的 application id 相同，装上会互相覆盖。
 
+## 调试日志
+
+- 固件：日志都走板上 UART 口，`idf.py -p /dev/ttyACM0 monitor` 查看（打开串口会复位板子）。每 60 s 有一行 `stack free: ...`，记录各任务栈和内部堆的最低余量、控制队列的最高占用，内容见 `firmware/DESIGN.md` 第 15 节。
+- App：连接的每一步、发出的每条命令、收到的每条通知都写进 logcat，正式版也一样。手机连着电脑时运行 `adb logcat -s flutter`，以 `titrator:` 开头的就是：`tx` 是发出的命令，`rx` 是收到的通知，原样打出。
+- 两边对照，就能看出一条消息丢在了哪一侧。
+
 ## 环境部署脚本 tools/env_config.sh
 
 用来在一台干净的 Linux 机器上一次装好 Flutter、Android SDK 和 JDK（不装 Android Studio），可选再装 ESP-IDF；也带卸载功能。约 940 行 bash，不要用 root 运行，需要 `sudo`。

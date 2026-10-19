@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 
 import '../core/protocol.dart';
@@ -18,10 +20,18 @@ class LinkException implements Exception {
 }
 
 /// BLE transport to one titrator at a time. Tests fake it with `implements`.
+///
+/// Every connection step, command and notification goes to [log], by default
+/// logcat (release builds too): `adb logcat -s flutter`, lines start with
+/// `titrator:`.
 class DeviceLink {
-  DeviceLink(this._ble);
+  DeviceLink(this._ble, {void Function(String line)? log})
+    : _log = log ?? _logcat;
 
   final FlutterReactiveBle _ble;
+  final void Function(String line) _log;
+
+  static void _logcat(String line) => debugPrint('titrator: $line');
 
   static final _service = Uuid.parse(TitratorUuids.service);
   static final _command = Uuid.parse(TitratorUuids.command);
@@ -60,10 +70,12 @@ class DeviceLink {
     await disconnect();
     final attempt = _attempt = Completer<void>();
     _deviceId = deviceId;
+    _log('connect $deviceId');
     _setStatus(LinkStatus.connecting);
     try {
       await _open(deviceId, attempt).timeout(_setupTimeout);
     } catch (e) {
+      _log('connect failed: $e');
       if (identical(_attempt, attempt)) await disconnect();
       throw switch (e) {
         LinkException() => e,
@@ -80,6 +92,8 @@ class DeviceLink {
     if (_status != LinkStatus.connected || id == null) {
       throw const LinkException(LinkFailure.failed, 'not connected');
     }
+    final bytes = command.encode();
+    _log('tx ${utf8.decode(bytes)}');
     try {
       await _ble.writeCharacteristicWithResponse(
         QualifiedCharacteristic(
@@ -87,9 +101,10 @@ class DeviceLink {
           characteristicId: _command,
           deviceId: id,
         ),
-        value: command.encode(),
+        value: bytes,
       );
     } catch (e) {
+      _log('tx failed: $e');
       throw LinkException(LinkFailure.failed, e);
     }
   }
@@ -99,6 +114,7 @@ class DeviceLink {
     final connection = _connection;
     final notify = _notify;
     _attempt = _connection = _notify = null;
+    if (connection != null) _log('disconnect');
     if (attempt != null && !attempt.isCompleted) {
       attempt.completeError(const LinkException(LinkFailure.failed));
     }
@@ -129,6 +145,7 @@ class DeviceLink {
     await attempt.future;
 
     final mtu = await _ble.requestMtu(deviceId: id, mtu: _mtu);
+    _log('MTU $mtu');
     if (mtu < _minMtu) throw LinkException(LinkFailure.failed, 'MTU $mtu');
     await _ble.discoverAllServices(id);
     final services = await _ble.getDiscoveredServices(id);
@@ -150,6 +167,7 @@ class DeviceLink {
           ),
         )
         .listen((bytes) {
+          _log('rx ${utf8.decode(bytes, allowMalformed: true)}');
           // The `state` and `cal` the device sends on subscribe arrive before
           // Android and the plugin are ready for them and get dropped. The
           // first notification shows the path is up (nothing else does), so
@@ -161,11 +179,13 @@ class DeviceLink {
           final event = DeviceEvent.decode(bytes);
           if (event != null) _eventController.add(event);
         }, onError: (Object e) => _lost(attempt, e));
+    _log('subscribed');
     _setStatus(LinkStatus.connected);
   }
 
   /// The connection ended: fails a pending connect, otherwise it is a drop.
   void _lost(Completer<void> attempt, Object? cause) {
+    _log(cause == null ? 'lost' : 'lost: $cause');
     if (!attempt.isCompleted) {
       attempt.completeError(LinkException(LinkFailure.failed, cause));
     } else if (identical(_attempt, attempt)) {

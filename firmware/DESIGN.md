@@ -524,6 +524,7 @@ ISR   每个 TEZ：n = PCNT 计数；limit = 读开关
 - tag：`main`、`ble`、`stepper`、`ph_adc`、`cal`、`device`、`titr`。
 - INFO 级别要记录的内容：状态变化；每次滴定决策（pH、误差、通道、µL、换向次数）；每次运动的结束原因和位置；电极异常的进入和退出；标定参数的保存；连接、断开和 MTU。DEBUG 级别：每条命令原文、每个 `V_adc` 读数。WARN 级别：队列满、通知失败、NVS 失败、PCNT 计数与预期不符。
 - ISR（`axis.c`、`stepper.c` 的中断部分）不打日志。
+- 运行状态：控制任务每 60 s（`STATS_PERIOD_MS`）在 `main` tag 下打一行 INFO，例如（裸板实测）`stack free: ctl 3712, sensor 3004, nimble_host 1076 B; internal heap free 212643 B (min 176396 B); queue peak 1/16`。栈是开机以来的最低剩余量（`uxTaskGetStackHighWaterMark`，IDF 里单位是字节），堆是内部 RAM 的当前剩余和历史最低值，队列是开机以来控制队列同时排着的最多消息数。只走串口，不经 BLE：调试时板子都插着 USB，串口还能看到 panic 回溯和蓝牙起来前的日志。
 
 ---
 
@@ -627,4 +628,5 @@ ctest --test-dir firmware/test/host/build --output-on-failure
 - 用 nRF Connect 检查广播包是 21 B、设备名在扫描响应里。（PC 扫描已经看到设备名和 Service UUID，但没有看包长。）
 
 **任务栈**
-- 做完一次滴定和一次 `cal_set` 后，查看各任务的栈高水位（代码里现在没有打印，需要临时加日志调用 `uxTaskGetStackHighWaterMark`），确认余量够用。
+- 做完一次滴定和一次 `cal_set` 后，看串口上下一行 `stack free: ...`（第 15 节），确认各任务栈余量够用。
+  - 2026-10-19 裸板上（PC 端 `sync`、两次 `cal_set`、被拒的 `move`/`jog`/`titrate`、101 B 命令，再加 App 连接一次）的读数：ctl 剩 3712 / 6144 B，sensor 剩 3004 / 4096 B，nimble_host 剩 1076 / 4096 B；内部堆最低 176396 B；队列最多 1 条。还没有跑过滴定和电机，ctl 的数字不算最终结果。

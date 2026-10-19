@@ -20,6 +20,7 @@
 #include "core/protocol.h"
 #include "esp_app_desc.h"
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -39,6 +40,7 @@
 #define CTL_TASK_STACK 6144u /* cJSON parse + snprintf with floats */
 #define SENSOR_TASK_STACK 4096u
 #define APP_CORE 1           /* the BLE controller runs on core 0 */
+#define STATS_PERIOD_MS 60000u /* health line on the serial log (DESIGN.md section 15) */
 
 typedef enum {
     MSG_WRITE,
@@ -71,6 +73,8 @@ typedef struct {
 static const char *TAG = "main";
 
 static QueueHandle_t s_ctl_queue;
+static TaskHandle_t s_ctl_task;
+static TaskHandle_t s_sensor_task;
 static device_t s_device;
 static bool s_adc_ready;
 static volatile uint32_t s_motion_ends_lost; /* counted by the ISR, reported by the control task */
@@ -208,6 +212,29 @@ static void dispatch(const ctl_msg_t *msg)
     }
 }
 
+/* Least free stack since start in bytes, -1: no such task. NULL would mean
+ * the calling task. */
+static int stack_free(TaskHandle_t task)
+{
+    return task ? (int)uxTaskGetStackHighWaterMark(task) : -1;
+}
+
+/* Serial only, for whoever has the UART attached: stack and heap reserve and
+ * how full the control queue got. */
+static void log_stats(UBaseType_t queue_peak)
+{
+    static TaskHandle_t host;
+    if (!host)
+        host = xTaskGetHandle("nimble_host");
+    ESP_LOGI(TAG,
+             "stack free: ctl %d, sensor %d, nimble_host %d B; "
+             "internal heap free %u B (min %u B); queue peak %u/%u",
+             stack_free(s_ctl_task), stack_free(s_sensor_task), stack_free(host),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL), (unsigned)queue_peak,
+             (unsigned)CTL_QUEUE_LEN);
+}
+
 static void ctl_task(void *arg)
 {
     (void)arg;
@@ -223,11 +250,22 @@ static void ctl_task(void *arg)
     ESP_ERROR_CHECK(stepper_init(&axis_cfg, on_motion_end_isr, NULL));
 
     uint32_t lost_reported = 0;
+    UBaseType_t queue_peak = 0;
+    uint32_t next_stats_ms = now_ms() + STATS_PERIOD_MS;
     for (;;) {
         ctl_msg_t msg;
-        if (xQueueReceive(s_ctl_queue, &msg, pdMS_TO_TICKS(CTL_TICK_MS)) == pdTRUE)
+        if (xQueueReceive(s_ctl_queue, &msg, pdMS_TO_TICKS(CTL_TICK_MS)) == pdTRUE) {
+            UBaseType_t queued = uxQueueMessagesWaiting(s_ctl_queue) + 1; /* + the one received */
+            if (queued > queue_peak)
+                queue_peak = queued;
             dispatch(&msg);
-        device_tick(&s_device, now_ms());
+        }
+        uint32_t now = now_ms();
+        device_tick(&s_device, now);
+        if ((int32_t)(now - next_stats_ms) >= 0) {
+            log_stats(queue_peak);
+            next_stats_ms += STATS_PERIOD_MS;
+        }
 
         uint32_t lost = s_motion_ends_lost;
         if (lost != lost_reported) {
@@ -237,9 +275,10 @@ static void ctl_task(void *arg)
     }
 }
 
-static void start_task(TaskFunction_t fn, const char *name, uint32_t stack, UBaseType_t prio)
+static void start_task(TaskFunction_t fn, const char *name, uint32_t stack, UBaseType_t prio,
+                       TaskHandle_t *handle)
 {
-    BaseType_t ok = xTaskCreatePinnedToCore(fn, name, stack, NULL, prio, NULL, APP_CORE);
+    BaseType_t ok = xTaskCreatePinnedToCore(fn, name, stack, NULL, prio, handle, APP_CORE);
     ESP_ERROR_CHECK(ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 }
 
@@ -272,8 +311,8 @@ void app_main(void)
     s_adc_ready = adc_err == ESP_OK;
     if (!s_adc_ready)
         ESP_LOGE(TAG, "pH ADC init failed (%s), reporting read errors", esp_err_to_name(adc_err));
-    start_task(ctl_task, "ctl", CTL_TASK_STACK, CTL_TASK_PRIO);
-    start_task(sensor_task, "sensor", SENSOR_TASK_STACK, SENSOR_TASK_PRIO);
+    start_task(ctl_task, "ctl", CTL_TASK_STACK, CTL_TASK_PRIO, &s_ctl_task);
+    start_task(sensor_task, "sensor", SENSOR_TASK_STACK, SENSOR_TASK_PRIO, &s_sensor_task);
 
     /* Last: from here on the callbacks enqueue messages for the tasks above. */
     const ble_link_cbs_t cbs = {
